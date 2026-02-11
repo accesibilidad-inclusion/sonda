@@ -1,0 +1,8 @@
+{
+  "name": "sonda",
+  "description": "A design probe for autistic university students to explore barriers, facilitators, and strategies in their academic environment.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
