@@ -7,7 +7,7 @@
 
 Su objetivo es recolectar experiencias cualitativas sobre barreras, facilitadores y estrategias de autorregulación en el entorno académico, respetando la privacidad y las necesidades sensoriales de los participantes.
 
-**Documentación:**
+**Documentación:** 
 - [Guión completo de preguntas](./SONDA_QUESTIONS.md) - Diseño anti-ambigüedad con ejemplos concretos
 - [Formato de datos del Fidget](./FIDGET_DATA_FORMAT.md) - Estructura de tracking del fidget interactivo
 
