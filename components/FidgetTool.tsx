@@ -94,6 +94,11 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
       Runner.run(runner, engine);
       if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Runner created and running');
 
+      // Define collision categories
+      const rockCategory = 0x0001;
+      const anchorCategory = 0x0002;
+      const otherCategory = 0x0004;
+
       // Create walls and ground
       if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating walls and ground...');
 
@@ -101,6 +106,10 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
       const ground = Bodies.rectangle(width / 2, height - 25, width, 50, {
         isStatic: true,
         restitution: 0.8,
+        collisionFilter: {
+          category: otherCategory,
+          mask: rockCategory | otherCategory
+        },
         render: {
           fillStyle: '#1a1a1a'
         }
@@ -110,6 +119,10 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
       const leftWall = Bodies.rectangle(wallThickness / 2, height / 2, wallThickness, height, {
         isStatic: true,
         restitution: 0.8,
+        collisionFilter: {
+          category: otherCategory,
+          mask: rockCategory | otherCategory
+        },
         render: {
           fillStyle: '#2a2a2a'
         }
@@ -119,6 +132,10 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
       const rightWall = Bodies.rectangle(width - wallThickness / 2, height / 2, wallThickness, height, {
         isStatic: true,
         restitution: 0.8,
+        collisionFilter: {
+          category: otherCategory,
+          mask: rockCategory | otherCategory
+        },
         render: {
           fillStyle: '#2a2a2a'
         }
@@ -146,6 +163,10 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
         // Create shelf
         const shelf = Bodies.rectangle(shelfX, shelfY, shelfWidth, 20, {
           isStatic: true,
+          collisionFilter: {
+            category: otherCategory,
+            mask: rockCategory | otherCategory
+          },
           render: {
             fillStyle: '#2a2a2a'
           }
@@ -167,6 +188,10 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
               density: 0.001,
               friction: 0.8,
               restitution: 0.3,
+              collisionFilter: {
+                category: otherCategory,
+                mask: rockCategory | otherCategory
+              },
               render: {
                 fillStyle: colors[Math.floor(Math.random() * colors.length)]
               }
@@ -186,11 +211,15 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
       anchorRef.current = anchor;
       if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Anchor at (${anchorX}, ${anchorY})`);
 
-      // Create rock (projectile)
+      // Create rock (projectile) - collides with everything EXCEPT anchor
       const rockOptions = {
         density: 0.004,
         friction: 0.5,
         restitution: 0.8,
+        collisionFilter: {
+          category: rockCategory,
+          mask: otherCategory // Only collides with "other" objects, not anchor
+        },
         render: {
           fillStyle: '#FFFFFF'
         }
@@ -198,7 +227,7 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
 
       const rock = Bodies.circle(anchorX, anchorY, 15, rockOptions);
       rockRef.current = rock;
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Rock created');
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Rock created with collision filter');
 
       // Create elastic constraint (slingshot)
       const elastic = Constraint.create({
@@ -213,15 +242,18 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
       elasticRef.current = elastic;
       if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Elastic constraint created');
 
-      // Visual anchor point (sensor = visible but no collision)
+      // Visual anchor point - rock won't collide with it
       const anchorVisual = Bodies.circle(anchorX, anchorY, 8, {
         isStatic: true,
-        isSensor: true, // Prevents collision with the rock
+        collisionFilter: {
+          category: anchorCategory,
+          mask: 0 // Doesn't collide with anything
+        },
         render: {
           fillStyle: '#888888'
         }
       });
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Anchor visual created (sensor mode)');
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Anchor visual created with no collision');
 
       // Add all bodies to world
       if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Adding all bodies to world...');
