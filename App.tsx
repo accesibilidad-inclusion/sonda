@@ -354,15 +354,15 @@ const App = () => {
     if (newActive) setActiveActivity(newActive);
   };
 
-  const handleFidgetClose = (data: { startTime: string; durationSeconds: number; intensity: string; interactions: number }) => {
+  const handleFidgetClose = (data: { startTime: string; durationSeconds: number; shots: number; drags: number }) => {
     setShowFidget(false);
     // Log data to passive storage
     storageService.saveUsageLog({
         type: 'FIDGET_SESSION',
         startTime: data.startTime,
         durationSeconds: data.durationSeconds,
-        intensity: data.intensity,
-        interactions: data.interactions
+        shots: data.shots,
+        drags: data.drags
     });
     if (IS_DEVELOPER_MODE) {
         console.log("[App] Fidget session saved:", data);

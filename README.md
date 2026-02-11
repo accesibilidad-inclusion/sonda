@@ -1,10 +1,17 @@
 # Sonda Digital - Proyecto FONDECYT 1251541
 
-**Sonda** es una Aplicación Web Progresiva (PWA) diseñada como una sonda de diseño (design probe) para estudiantes universitarios en el espectro autista. 
+**Sonda** es una Aplicación Web Progresiva (PWA) diseñada como una sonda de diseño (design probe) para estudiantes universitarios en el espectro autista.
+
+**Deployment:** [https://accesibilidad-inclusion.github.io/sonda](https://accesibilidad-inclusion.github.io/sonda)
+**Versión:** 0.1
 
 Su objetivo es recolectar experiencias cualitativas sobre barreras, facilitadores y estrategias de autorregulación en el entorno académico, respetando la privacidad y las necesidades sensoriales de los participantes.
 
-## 📋 Contexto del Proyecto
+**Documentación:**
+- [Guión completo de preguntas](./SONDA_QUESTIONS.md) - Diseño anti-ambigüedad con ejemplos concretos
+- [Formato de datos del Fidget](./FIDGET_DATA_FORMAT.md) - Estructura de tracking del fidget interactivo
+
+## Contexto del Proyecto
 
 Esta aplicación es parte del proyecto de investigación:
 > **"Promoción del aprendizaje de habilidades de autodeterminación en estudiantes con TEA en educación superior: Diseño y evaluación de una propuesta formativa basada en la Teoría de la Agencia Causal."**
@@ -12,7 +19,7 @@ Esta aplicación es parte del proyecto de investigación:
 > **Financiamiento:** FONDECYT Regular N° 1251541 (ANID).
 > **Investigadora Responsable:** Dra. Vanessa Vega Córdova (PUCV).
 
-## ✨ Características Principales
+## Características Principales
 
 ### 1. Estructura Modular Semanal
 La experiencia está dividida en 4 módulos temáticos que se desbloquean progresivamente:
@@ -20,12 +27,13 @@ La experiencia está dividida en 4 módulos temáticos que se desbloquean progre
 - **Semana 2:** Navegando la Academia (Funciones ejecutivas, planificación).
 - **Semana 3:** Lo Social y la Comunicación (Interacción con pares y docentes).
 - **Semana 4:** Identidad y Futuro (Autodeterminación).
+Ver [el guión completo](SONDA_QUESTIONS.md).
 
 ### 2. Respuestas Multimodales
 Los participantes pueden responder a las actividades mediante:
-- 📝 Texto.
-- 🎙️ Audio (Simulación/Grabación).
-- 📸 Fotografía.
+- Texto.
+- Audio 
+- Fotografía (y clips de video).
 
 ### 3. Perfil Sensorial Personalizable
 La aplicación incluye un menú robusto de accesibilidad cognitiva y sensorial:
@@ -35,20 +43,20 @@ La aplicación incluye un menú robusto de accesibilidad cognitiva y sensorial:
 - **Ruido de Fondo:** Generador de ruido blanco, rosa oarrón para la concentración.
 
 ### 4. Herramienta de Regulación (Fidget)
-Incluye una herramienta interactiva basada en **WebGL** (simulación de fluidos) que permite al usuario interactuar visualmente con "una galaxia" mediante *touch* o *mouse* para reducir la ansiedad. El uso de esta herramienta se registra pasivamente para entender los momentos de necesidad de regulación.
+Incluye una herramienta interactiva basada en **Matter.js** (motor de física 2D) que funciona como un juego de resortera: el usuario arrastra y suelta una pelota para derribar torres de cubos coloridos. Los cubos rebotan en paredes laterales, creando una experiencia satisfactoria y predecible. El uso de esta herramienta se registra pasivamente (disparos, arrastres, duración) para entender los momentos de necesidad de regulación. Ver [formato de datos](./FIDGET_DATA_FORMAT.md).
 
 ### 5. Privacidad y Modelo de Datos "Local-First"
 - **Almacenamiento Local:** Todos los datos (respuestas y configuraciones) se guardan exclusivamente en el `localStorage` del dispositivo del usuario.
 - **Envío Proactivo:** No hay envío silencioso de datos a un servidor. El usuario debe explícitamente presionar "Enviar Datos", lo cual descarga un archivo JSON y abre su cliente de correo para enviarlo manualmente al equipo de investigación.
 
-## 🛠️ Configuración Técnica
+## Configuración Técnica
 
 El proyecto está construido con:
 - **React 19**
 - **TypeScript**
 - **Tailwind CSS**
 - **Lucide React** (Iconos)
-- **WebGL** (Fidget Tool)
+- **Matter.js** (Motor de física 2D para el Fidget Tool)
 
 ### Variables de Entorno y Constantes
 La configuración principal se encuentra en `constants.ts`.
@@ -63,7 +71,7 @@ Existe una constante `IS_DEVELOPER_MODE`.
 export const IS_DEVELOPER_MODE = true; 
 ```
 
-## 📦 Estructura de Datos (JSON)
+## Estructura de Datos de la Sonda (JSON)
 
 Al exportar los datos desde el menú "Preferencias", se genera un archivo JSON con la siguiente estructura:
 
@@ -108,8 +116,10 @@ Al exportar los datos desde el menú "Preferencias", se genera un archivo JSON c
     {
       "timestamp": "2023-10-27T10:05:00.000Z",
       "type": "FIDGET_SESSION",
-      "duration": 45.2, // Segundos de uso de la herramienta de relajación
-      "intensity": "medium" // low | medium | high (basado en interacciones)
+      "startTime": "2023-10-27T10:04:20.000Z",
+      "durationSeconds": 45.2, // Duración total de la sesión
+      "shots": 8, // Número de disparos (sueltas de la pelota)
+      "drags": 12 // Número de arrastres (movimientos de la pelota)
     }
   ]
 }
@@ -134,10 +144,10 @@ Al exportar los datos desde el menú "Preferencias", se genera un archivo JSON c
     npm run build
     ```
 
-## 📱 Uso como PWA
+## Uso como PWA
 La aplicación está optimizada para móviles. En iOS (Safari) y Android (Chrome), se puede usar la opción "Agregar a Inicio" para instalarla como una aplicación nativa sin barras de navegación del navegador.
 
-## 📧 Contacto
+## Contacto
 Para dudas técnicas o sobre el estudio:
 - **Investigación:** vanessa.vega@pucv.cl
-- **Desarrollo:** hspencer@ead.cl
+- **Diseño y Desarrollo:** hspencer@ead.cl

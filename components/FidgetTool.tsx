@@ -1,694 +1,488 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { IS_DEVELOPER_MODE } from '../constants';
+import Matter from 'matter-js';
 
 interface FidgetToolProps {
-  onClose: (sessionData: { duration: number; intensity: string }) => void;
+  onClose: (sessionData: { startTime: string; durationSeconds: number; shots: number; drags: number }) => void;
   reducedMotion?: boolean;
 }
 
 const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [startTime] = useState(Date.now());
-  const interactionCount = useRef(0);
-  
-  // Use a ref for pointers to handle multitouch without re-renders
-  const pointers = useRef(new Map<number, { x: number, y: number, color: number[], dx: number, dy: number }>());
+  const shotCount = useRef(0);
+  const dragCount = useRef(0);
+  const engineRef = useRef<Matter.Engine | null>(null);
+  const renderRef = useRef<Matter.Render | null>(null);
+  const runnerRef = useRef<Matter.Runner | null>(null);
+  const rockRef = useRef<Matter.Body | null>(null);
+  const elasticRef = useRef<Matter.Constraint | null>(null);
+  const anchorRef = useRef<{ x: number; y: number } | null>(null);
+  const [showInstructions, setShowInstructions] = useState(true);
+
+  const colors = ['#E94B91', '#03A9F5', '#00BCD4', '#FFA500', '#FFEB3B', '#8BC34A'];
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) {
-        if (IS_DEVELOPER_MODE) console.error("[FidgetTool] Canvas ref is null");
-        return;
+    if (IS_DEVELOPER_MODE) console.log('[FidgetTool] useEffect started');
+
+    const container = containerRef.current;
+    if (!container) {
+      if (IS_DEVELOPER_MODE) console.error('[FidgetTool] Container ref is null');
+      return;
     }
 
-    // Configuration
-    const config = {
-      TEXTURE_DOWNSAMPLE: 1,
-      DENSITY_DISSIPATION: 0.995,  // Higher = longer trails
-      VELOCITY_DISSIPATION: 0.995,  // Higher = longer fluid motion
-      PRESSURE: 0.8,
-      PRESSURE_ITERATIONS: 20,
-      CURL: 20,  // Reduced from 30 for more stability
-      SPLAT_RADIUS: 0.010,  // Slightly larger splats for visibility
-      SPLAT_FORCE: 8000  // Increased force for better responsiveness
-    };
-
-    if (reducedMotion) {
-      config.CURL = 0;
-      config.VELOCITY_DISSIPATION = 0.90;
-      config.DENSITY_DISSIPATION = 0.92;
+    // Clear any existing canvases (in case of remount)
+    while (container.firstChild) {
+      container.removeChild(container.firstChild);
     }
 
-    // WebGL Setup
-    if (IS_DEVELOPER_MODE) console.log("[FidgetTool] Initializing WebGL...");
-    const gl = canvas.getContext('webgl', { alpha: false, antialias: false });
-    if (!gl) {
-        if (IS_DEVELOPER_MODE) console.error("[FidgetTool] WebGL not supported");
-        return;
-    }
+    if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Container ref OK', container);
+    if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Container cleared, children count:', container.children.length);
 
-    const ext = gl.getExtension('OES_texture_half_float');
-    const supportLinearFiltering = gl.getExtension('OES_texture_half_float_linear');
-    if (IS_DEVELOPER_MODE) {
-        console.log(`[FidgetTool] OES_texture_half_float: ${!!ext}`);
-        console.log(`[FidgetTool] OES_texture_half_float_linear: ${!!supportLinearFiltering}`);
-    }
-    const halfFloat = ext ? ext.HALF_FLOAT_OES : gl.UNSIGNED_BYTE;
-    
-    // --- SHADERS ---
-    
-    const baseVertexShader = `
-      attribute vec2 aPosition;
-      varying vec2 vUv;
-      void main () {
-          vUv = aPosition * 0.5 + 0.5;
-          gl_Position = vec4(aPosition, 0.0, 1.0);
-      }
-    `;
+    try {
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Extracting Matter.js modules...');
 
-    const clearShader = `
-      precision mediump float;
-      precision mediump sampler2D;
-      varying highp vec2 vUv;
-      uniform sampler2D uTexture;
-      uniform float value;
-      void main () {
-          gl_FragColor = value * texture2D(uTexture, vUv);
-      }
-    `;
+      const Engine = Matter.Engine;
+      const Render = Matter.Render;
+      const Runner = Matter.Runner;
+      const World = Matter.World;
+      const Bodies = Matter.Bodies;
+      const Constraint = Matter.Constraint;
+      const Mouse = Matter.Mouse;
+      const MouseConstraint = Matter.MouseConstraint;
+      const Events = Matter.Events;
 
-    const splatShader = `
-      precision mediump float;
-      precision mediump sampler2D;
-      varying highp vec2 vUv;
-      uniform sampler2D uTarget;
-      uniform float aspectRatio;
-      uniform vec3 color;
-      uniform vec2 point;
-      uniform float radius;
-      void main () {
-          vec2 p = vUv - point.xy;
-          p.x *= aspectRatio;
-          vec3 splat = exp(-dot(p, p) / radius) * color;
-          vec3 base = texture2D(uTarget, vUv).xyz;
-          gl_FragColor = vec4(base + splat, 1.0);
-      }
-    `;
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Matter.js modules extracted successfully');
 
-    const advectionShader = `
-      precision mediump float;
-      precision mediump sampler2D;
-      varying highp vec2 vUv;
-      uniform sampler2D uVelocity;
-      uniform sampler2D uSource;
-      uniform vec2 texelSize;
-      uniform float dt;
-      uniform float dissipation;
-      void main () {
-          vec2 coord = vUv - dt * texture2D(uVelocity, vUv).xy * texelSize;
-          gl_FragColor = dissipation * texture2D(uSource, coord);
-      }
-    `;
+      // Get dimensions
+      const width = window.innerWidth;
+      const height = window.innerHeight;
 
-    const divergenceShader = `
-      precision mediump float;
-      precision mediump sampler2D;
-      varying highp vec2 vUv;
-      uniform sampler2D uVelocity;
-      uniform vec2 texelSize;
-      void main () {
-          vec2 vL = vUv - vec2(texelSize.x, 0.0);
-          vec2 vR = vUv + vec2(texelSize.x, 0.0);
-          vec2 vT = vUv + vec2(0.0, texelSize.y);
-          vec2 vB = vUv - vec2(0.0, texelSize.y);
-          
-          float L = texture2D(uVelocity, vL).x;
-          float R = texture2D(uVelocity, vR).x;
-          float T = texture2D(uVelocity, vT).y;
-          float B = texture2D(uVelocity, vB).y;
-          
-          vec2 C = texture2D(uVelocity, vUv).xy;
-          if (vL.x < 0.0) { L = -C.x; }
-          if (vR.x > 1.0) { R = -C.x; }
-          if (vT.y > 1.0) { T = -C.y; }
-          if (vB.y < 0.0) { B = -C.y; }
-          
-          float div = 0.5 * (R - L + T - B);
-          gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
-      }
-    `;
+      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Dimensions: ${width}x${height}`);
 
-    const curlShader = `
-      precision mediump float;
-      precision mediump sampler2D;
-      varying highp vec2 vUv;
-      uniform sampler2D uVelocity;
-      uniform vec2 texelSize;
-      void main () {
-          vec2 vL = vUv - vec2(texelSize.x, 0.0);
-          vec2 vR = vUv + vec2(texelSize.x, 0.0);
-          vec2 vT = vUv + vec2(0.0, texelSize.y);
-          vec2 vB = vUv - vec2(0.0, texelSize.y);
+      // Create engine
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating Matter.js engine...');
+      const engine = Engine.create();
+      engineRef.current = engine;
+      const world = engine.world;
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Engine created successfully', engine);
 
-          float L = texture2D(uVelocity, vL).y;
-          float R = texture2D(uVelocity, vR).y;
-          float T = texture2D(uVelocity, vT).x;
-          float B = texture2D(uVelocity, vB).x;
-          float vorticity = R - L - T + B;
-          gl_FragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
-      }
-    `;
-
-    const vorticityShader = `
-      precision mediump float;
-      precision mediump sampler2D;
-      varying highp vec2 vUv;
-      uniform sampler2D uVelocity;
-      uniform sampler2D uCurl;
-      uniform vec2 texelSize;
-      uniform float curl;
-      uniform float dt;
-      void main () {
-          vec2 vL = vUv - vec2(texelSize.x, 0.0);
-          vec2 vR = vUv + vec2(texelSize.x, 0.0);
-          vec2 vT = vUv + vec2(0.0, texelSize.y);
-          vec2 vB = vUv - vec2(0.0, texelSize.y);
-
-          float L = texture2D(uCurl, vL).x;
-          float R = texture2D(uCurl, vR).x;
-          float T = texture2D(uCurl, vT).x;
-          float B = texture2D(uCurl, vB).x;
-          float C = texture2D(uCurl, vUv).x;
-          
-          vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
-          force /= length(force) + 0.0001;
-          force *= curl * C;
-          force.y *= -1.0;
-          
-          vec2 vel = texture2D(uVelocity, vUv).xy;
-          gl_FragColor = vec4(vel + force * dt, 0.0, 1.0);
-      }
-    `;
-
-    const pressureShader = `
-      precision mediump float;
-      precision mediump sampler2D;
-      varying highp vec2 vUv;
-      uniform sampler2D uPressure;
-      uniform sampler2D uDivergence;
-      uniform vec2 texelSize;
-      void main () {
-          vec2 vL = vUv - vec2(texelSize.x, 0.0);
-          vec2 vR = vUv + vec2(texelSize.x, 0.0);
-          vec2 vT = vUv + vec2(0.0, texelSize.y);
-          vec2 vB = vUv - vec2(0.0, texelSize.y);
-
-          float L = texture2D(uPressure, vL).x;
-          float R = texture2D(uPressure, vR).x;
-          float T = texture2D(uPressure, vT).x;
-          float B = texture2D(uPressure, vB).x;
-          float C = texture2D(uPressure, vUv).x;
-          float divergence = texture2D(uDivergence, vUv).x;
-          float pressure = (L + R + B + T - divergence) * 0.25;
-          gl_FragColor = vec4(pressure, 0.0, 0.0, 1.0);
-      }
-    `;
-
-    const gradientSubtractShader = `
-      precision mediump float;
-      precision mediump sampler2D;
-      varying highp vec2 vUv;
-      uniform sampler2D uPressure;
-      uniform sampler2D uVelocity;
-      uniform vec2 texelSize;
-      void main () {
-          vec2 vL = vUv - vec2(texelSize.x, 0.0);
-          vec2 vR = vUv + vec2(texelSize.x, 0.0);
-          vec2 vT = vUv + vec2(0.0, texelSize.y);
-          vec2 vB = vUv - vec2(0.0, texelSize.y);
-
-          float L = texture2D(uPressure, vL).x;
-          float R = texture2D(uPressure, vR).x;
-          float T = texture2D(uPressure, vT).x;
-          float B = texture2D(uPressure, vB).x;
-          vec2 velocity = texture2D(uVelocity, vUv).xy;
-          velocity.xy -= vec2(R - L, T - B);
-          gl_FragColor = vec4(velocity, 0.0, 1.0);
-      }
-    `;
-
-    // --- UTILS ---
-
-    const createProgram = (vertexShader: string, fragmentShader: string, name?: string) => {
-      const createShader = (source: string, type: number) => {
-        const shader = gl.createShader(type);
-        if (!shader) return null;
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            if (IS_DEVELOPER_MODE) console.error(`[FidgetTool] Error compiling shader (${name}):`, gl.getShaderInfoLog(shader));
-            return null;
+      // Create renderer
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating renderer...');
+      const render = Render.create({
+        element: container,
+        engine: engine,
+        options: {
+          width: width,
+          height: height,
+          wireframes: false,
+          background: '#000000'
         }
-        return shader;
+      });
+      renderRef.current = render;
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Renderer created', render);
+
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Starting renderer...');
+      Render.run(render);
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Renderer running');
+
+      // Create runner
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating runner...');
+      const runner = Runner.create();
+      runnerRef.current = runner;
+      Runner.run(runner, engine);
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Runner created and running');
+
+      // Create walls and ground
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating walls and ground...');
+
+      const wallThickness = 20;
+      const ground = Bodies.rectangle(width / 2, height - 25, width, 50, {
+        isStatic: true,
+        restitution: 0.8,
+        render: {
+          fillStyle: '#1a1a1a'
+        }
+      });
+
+      // Left wall
+      const leftWall = Bodies.rectangle(wallThickness / 2, height / 2, wallThickness, height, {
+        isStatic: true,
+        restitution: 0.8,
+        render: {
+          fillStyle: '#2a2a2a'
+        }
+      });
+
+      // Right wall
+      const rightWall = Bodies.rectangle(width - wallThickness / 2, height / 2, wallThickness, height, {
+        isStatic: true,
+        restitution: 0.8,
+        render: {
+          fillStyle: '#2a2a2a'
+        }
+      });
+
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Ground and walls created');
+
+      // Create random shelves (repisas) with stacked boxes
+      const shelves: Matter.Body[] = [];
+      const boxes: Matter.Body[] = [];
+
+      // Create 4-6 shelves at different heights on BOTH sides
+      const numShelves = 4 + Math.floor(Math.random() * 3); // 4-6 shelves
+      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Creating ${numShelves} shelves on both sides...`);
+
+      for (let i = 0; i < numShelves; i++) {
+        const shelfY = height * 0.2 + (Math.random() * height * 0.5); // Random heights
+        // Alternate between left and right, or random
+        const isLeft = i % 2 === 0;
+        const shelfX = isLeft
+          ? wallThickness + 50 + (Math.random() * (width * 0.25)) // Left side
+          : width - wallThickness - 50 - (Math.random() * (width * 0.25)); // Right side
+        const shelfWidth = 40 + Math.random() * 20; // Very narrow shelves (40-60px)
+
+        // Create shelf
+        const shelf = Bodies.rectangle(shelfX, shelfY, shelfWidth, 20, {
+          isStatic: true,
+          render: {
+            fillStyle: '#2a2a2a'
+          }
+        });
+        shelves.push(shelf);
+
+        // Stack boxes on shelf (vertical tower)
+        const numBoxes = 5 + Math.floor(Math.random() * 5); // 5-9 boxes
+        const boxWidth = 30;
+        const boxHeight = 40;
+
+        for (let j = 0; j < numBoxes; j++) {
+          const box = Bodies.rectangle(
+            shelfX,
+            shelfY - 20 - (j * boxHeight) - boxHeight / 2,
+            boxWidth,
+            boxHeight,
+            {
+              density: 0.001,
+              friction: 0.8,
+              restitution: 0.3,
+              render: {
+                fillStyle: colors[Math.floor(Math.random() * colors.length)]
+              }
+            }
+          );
+          boxes.push(box);
+        }
+      }
+
+      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Created ${shelves.length} shelves and ${boxes.length} boxes`);
+
+      // Create slingshot anchor (bottom center, raised higher)
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating slingshot...');
+      const anchorX = width * 0.5; // Center horizontally
+      const anchorY = height - 250; // Higher up from bottom
+      const anchor = { x: anchorX, y: anchorY };
+      anchorRef.current = anchor;
+      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Anchor at (${anchorX}, ${anchorY})`);
+
+      // Create rock (projectile)
+      const rockOptions = {
+        density: 0.004,
+        friction: 0.5,
+        restitution: 0.8,
+        render: {
+          fillStyle: '#FFFFFF'
+        }
       };
 
-      const program = gl.createProgram();
-      if (!program) return null;
-      const vs = createShader(vertexShader, gl.VERTEX_SHADER);
-      const fs = createShader(fragmentShader, gl.FRAGMENT_SHADER);
-      if (!vs || !fs) return null;
-      
-      gl.attachShader(program, vs);
-      gl.attachShader(program, fs);
-      gl.linkProgram(program);
-      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-          if (IS_DEVELOPER_MODE) console.error(`[FidgetTool] Error linking program (${name}):`, gl.getProgramInfoLog(program));
-          return null;
+      const rock = Bodies.circle(anchorX, anchorY, 15, rockOptions);
+      rockRef.current = rock;
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Rock created');
+
+      // Create elastic constraint (slingshot)
+      const elastic = Constraint.create({
+        pointA: anchor,
+        bodyB: rock,
+        stiffness: 0.05,
+        render: {
+          lineWidth: 3,
+          strokeStyle: '#666666'
+        }
+      });
+      elasticRef.current = elastic;
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Elastic constraint created');
+
+      // Visual anchor point
+      const anchorVisual = Bodies.circle(anchorX, anchorY, 8, {
+        isStatic: true,
+        render: {
+          fillStyle: '#888888'
+        }
+      });
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Anchor visual created');
+
+      // Add all bodies to world
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Adding all bodies to world...');
+      World.add(world, [ground, leftWall, rightWall, ...shelves, ...boxes, rock, elastic, anchorVisual]);
+      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Added ${1 + 2 + shelves.length + boxes.length + 2 + 1} bodies to world (including walls)`);
+
+      // Track mouse constraint for drag counting
+      let isDragging = false;
+      let hasShotThisRock = false;
+
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Setting up afterUpdate event...');
+
+      // Reset rock after shot
+      Events.on(engine, 'afterUpdate', function() {
+        if (!rockRef.current || !elasticRef.current || !anchorRef.current) return;
+
+        const currentRock = rockRef.current;
+        const currentElastic = elasticRef.current;
+        const distance = Matter.Vector.magnitude(
+          Matter.Vector.sub(currentRock.position, anchorRef.current)
+        );
+
+        // If rock is released and has moved away from anchor (release the slingshot)
+        if (distance > 50 && !isDragging && !hasShotThisRock) {
+          hasShotThisRock = true;
+
+          // IMPORTANT: Remove the elastic constraint to release the rock
+          World.remove(engineRef.current!.world, currentElastic);
+          if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Elastic constraint removed - rock is free!');
+
+          // Count as a shot
+          shotCount.current++;
+          if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Shot #${shotCount.current}`);
+
+          // Wait a bit before resetting
+          setTimeout(() => {
+            if (!engineRef.current || !anchorRef.current) return;
+
+            // Remove old rock
+            World.remove(engineRef.current.world, currentRock);
+            if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Old rock removed');
+
+            // Create new rock
+            const newRock = Bodies.circle(anchorRef.current.x, anchorRef.current.y, 15, rockOptions);
+            rockRef.current = newRock;
+            World.add(engineRef.current.world, newRock);
+            if (IS_DEVELOPER_MODE) console.log('[FidgetTool] New rock created and added');
+
+            // Create NEW elastic constraint for the new rock
+            const newElastic = Constraint.create({
+              pointA: anchorRef.current,
+              bodyB: newRock,
+              stiffness: 0.05,
+              render: {
+                lineWidth: 3,
+                strokeStyle: '#666666'
+              }
+            });
+            elasticRef.current = newElastic;
+            World.add(engineRef.current.world, newElastic);
+            if (IS_DEVELOPER_MODE) console.log('[FidgetTool] New elastic constraint created and added');
+
+            hasShotThisRock = false;
+          }, 2000);
+        }
+      });
+
+      // Add mouse control
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating mouse control...');
+      const mouse = Mouse.create(render.canvas);
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Mouse created', mouse);
+
+      const mouseConstraint = MouseConstraint.create(engine, {
+        mouse: mouse,
+        constraint: {
+          stiffness: 0.2,
+          render: {
+            visible: false
+          }
+        }
+      });
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] MouseConstraint created', mouseConstraint);
+
+      // Track dragging
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Setting up drag events...');
+      Events.on(mouseConstraint, 'startdrag', function(event: Matter.IEventCollision<Matter.MouseConstraint>) {
+        // Only count drags on the rock
+        if (event.body === rockRef.current) {
+          isDragging = true;
+          dragCount.current++;
+          if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Drag #${dragCount.current}`);
+        }
+      });
+
+      Events.on(mouseConstraint, 'enddrag', function() {
+        isDragging = false;
+      });
+
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Adding mouseConstraint to world...');
+      World.add(world, mouseConstraint);
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] MouseConstraint added');
+
+      // Keep mouse in sync with rendering
+      render.mouse = mouse;
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Mouse synced with renderer');
+
+      // Handle window resize
+      const handleResize = () => {
+        if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Window resized');
+        const newWidth = window.innerWidth;
+        const newHeight = window.innerHeight;
+
+        render.canvas.width = newWidth;
+        render.canvas.height = newHeight;
+        render.options.width = newWidth;
+        render.options.height = newHeight;
+
+        Render.lookAt(render, {
+          min: { x: 0, y: 0 },
+          max: { x: newWidth, y: newHeight }
+        });
+      };
+
+      window.addEventListener('resize', handleResize);
+
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] ✅ Slingshot initialized successfully!');
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Canvas element:', render.canvas);
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Canvas dimensions:', render.canvas.width, 'x', render.canvas.height);
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Canvas parent:', render.canvas.parentElement);
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Canvas style:', window.getComputedStyle(render.canvas));
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Container children:', container.children);
+
+      // Force canvas to be visible and interactive
+      render.canvas.style.display = 'block';
+      render.canvas.style.position = 'absolute';
+      render.canvas.style.top = '0';
+      render.canvas.style.left = '0';
+      render.canvas.style.width = '100%';
+      render.canvas.style.height = '100%';
+      render.canvas.style.pointerEvents = 'auto';
+      render.canvas.style.touchAction = 'none';
+      render.canvas.style.zIndex = '1';
+
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Canvas styles applied');
+
+      // Hide instructions after 5 seconds
+      setTimeout(() => {
+        if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Hiding instructions');
+        setShowInstructions(false);
+      }, 5000);
+
+      // Cleanup
+      return () => {
+        if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Cleaning up...');
+
+        window.removeEventListener('resize', handleResize);
+
+        if (runnerRef.current && engineRef.current) {
+          if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Stopping runner');
+          Runner.stop(runnerRef.current);
+        }
+        if (renderRef.current) {
+          if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Stopping renderer');
+          Render.stop(renderRef.current);
+
+          // Remove canvas from DOM
+          if (render.canvas && render.canvas.parentElement) {
+            render.canvas.parentElement.removeChild(render.canvas);
+            if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Canvas removed from DOM');
+          }
+        }
+        if (engineRef.current) {
+          if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Clearing engine');
+          Engine.clear(engineRef.current);
+        }
+
+        if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Cleanup complete');
+      };
+    } catch (err) {
+      if (IS_DEVELOPER_MODE) {
+        console.error('[FidgetTool] ❌ FATAL ERROR during initialization:', err);
+        if (err instanceof Error) {
+          console.error('[FidgetTool] Error message:', err.message);
+          console.error('[FidgetTool] Error stack:', err.stack);
+        }
       }
-      return program;
-    };
-
-    const blit = (destination: WebGLFramebuffer | null) => {
-        gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
-        gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
-    };
-
-    let simWidth: number, simHeight: number;
-    let dyeWidth: number, dyeHeight: number;
-
-    const createFBO = (w: number, h: number, type: number = halfFloat) => {
-        gl.activeTexture(gl.TEXTURE0);
-        const texture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, type === halfFloat && supportLinearFiltering ? gl.LINEAR : gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, type === halfFloat && supportLinearFiltering ? gl.LINEAR : gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, type, null);
-
-        const fbo = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-        gl.viewport(0, 0, w, h);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        return {
-            fbo,
-            texture,
-            width: w,
-            height: h,
-            attach: (id: number) => {
-                gl.activeTexture(gl.TEXTURE0 + id);
-                gl.bindTexture(gl.TEXTURE_2D, texture);
-                return id;
-            }
-        };
-    };
-
-    const createDoubleFBO = (w: number, h: number, type: number = halfFloat) => {
-        let fbo1 = createFBO(w, h, type);
-        let fbo2 = createFBO(w, h, type);
-        return {
-            width: w,
-            height: h,
-            texelSizeX: 1.0 / w,
-            texelSizeY: 1.0 / h,
-            get read() { return fbo1; },
-            set read(value) { fbo1 = value; },
-            get write() { return fbo2; },
-            set write(value) { fbo2 = value; },
-            swap: () => {
-                let temp = fbo1;
-                fbo1 = fbo2;
-                fbo2 = temp;
-            }
-        };
-    };
-
-    // --- INIT ---
-
-    let density: any;
-    let velocity: any;
-    let divergence: any;
-    let curl: any;
-    let pressure: any;
-
-    const resizeCanvas = () => {
-        if (!canvas) return;
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        simWidth = Math.floor(canvas.width / 2); 
-        simHeight = Math.floor(canvas.height / 2);
-        dyeWidth = Math.floor(canvas.width / 1); 
-        dyeHeight = Math.floor(canvas.height / 1);
-        
-        if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Resizing: ${canvas.width}x${canvas.height}`);
-
-        density = createDoubleFBO(dyeWidth, dyeHeight);
-        velocity = createDoubleFBO(simWidth, simHeight);
-        divergence = createFBO(simWidth, simHeight);
-        curl = createFBO(simWidth, simHeight);
-        pressure = createDoubleFBO(simWidth, simHeight);
-    };
-
-    resizeCanvas();
-
-    const displayProgram = createProgram(baseVertexShader, `
-        precision mediump float;
-        precision mediump sampler2D;
-        varying highp vec2 vUv;
-        uniform sampler2D uTexture;
-        void main () {
-            gl_FragColor = texture2D(uTexture, vUv);
-        }
-    `, 'Display');
-    
-    const splatProgram = createProgram(baseVertexShader, splatShader, 'Splat');
-    const advectionProgram = createProgram(baseVertexShader, advectionShader, 'Advection');
-    const divergenceProgram = createProgram(baseVertexShader, divergenceShader, 'Divergence');
-    const curlProgram = createProgram(baseVertexShader, curlShader, 'Curl');
-    const vorticityProgram = createProgram(baseVertexShader, vorticityShader, 'Vorticity');
-    const pressureProgram = createProgram(baseVertexShader, pressureShader, 'Pressure');
-    const gradienSubtractProgram = createProgram(baseVertexShader, gradientSubtractShader, 'GradientSubtract');
-    const clearProgram = createProgram(baseVertexShader, clearShader, 'Clear');
-
-    const glQuadBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW);
-    const glQuadIndexBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glQuadIndexBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
-
-    let lastTime = Date.now();
-    let animId: number;
-
-    const update = () => {
-        const dt = Math.min((Date.now() - lastTime) / 1000, 0.016);
-        lastTime = Date.now();
-
-        gl.disable(gl.BLEND);
-        gl.viewport(0, 0, simWidth, simHeight);
-
-        if (advectionProgram) {
-             const posLoc = gl.getAttribLocation(advectionProgram, 'aPosition');
-             gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuffer);
-             gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-             gl.enableVertexAttribArray(posLoc);
-             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glQuadIndexBuffer);
-        }
-
-        // 1. Curl
-        if(curlProgram) {
-            gl.useProgram(curlProgram);
-            gl.uniform1i(gl.getUniformLocation(curlProgram!, 'uVelocity'), velocity.read.attach(0));
-            gl.uniform2f(gl.getUniformLocation(curlProgram!, 'texelSize'), velocity.texelSizeX, velocity.texelSizeY);
-            blit(curl.fbo);
-        }
-
-        // 2. Vorticity
-        if(vorticityProgram) {
-            gl.useProgram(vorticityProgram);
-            gl.uniform1i(gl.getUniformLocation(vorticityProgram!, 'uVelocity'), velocity.read.attach(0));
-            gl.uniform1i(gl.getUniformLocation(vorticityProgram!, 'uCurl'), curl.attach(1));
-            gl.uniform2f(gl.getUniformLocation(vorticityProgram!, 'texelSize'), velocity.texelSizeX, velocity.texelSizeY);
-            gl.uniform1f(gl.getUniformLocation(vorticityProgram!, 'curl'), config.CURL);
-            gl.uniform1f(gl.getUniformLocation(vorticityProgram!, 'dt'), dt);
-            blit(velocity.write.fbo);
-            velocity.swap();
-        }
-
-        // 3. Divergence
-        if(divergenceProgram) {
-            gl.useProgram(divergenceProgram);
-            gl.uniform1i(gl.getUniformLocation(divergenceProgram!, 'uVelocity'), velocity.read.attach(0));
-            gl.uniform2f(gl.getUniformLocation(divergenceProgram!, 'texelSize'), velocity.texelSizeX, velocity.texelSizeY);
-            blit(divergence.fbo);
-        }
-
-        // 4. Clear Pressure
-        if(clearProgram) {
-            gl.useProgram(clearProgram);
-            gl.uniform1i(gl.getUniformLocation(clearProgram!, 'uTexture'), pressure.read.attach(0));
-            gl.uniform1f(gl.getUniformLocation(clearProgram!, 'value'), config.PRESSURE);
-            blit(pressure.write.fbo);
-            pressure.swap();
-        }
-
-        // 5. Pressure (Jacobi)
-        if(pressureProgram) {
-            gl.useProgram(pressureProgram);
-            gl.uniform1i(gl.getUniformLocation(pressureProgram!, 'uDivergence'), divergence.attach(0));
-            gl.uniform2f(gl.getUniformLocation(pressureProgram!, 'texelSize'), velocity.texelSizeX, velocity.texelSizeY);
-            for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
-                gl.uniform1i(gl.getUniformLocation(pressureProgram!, 'uPressure'), pressure.read.attach(1));
-                blit(pressure.write.fbo);
-                pressure.swap();
-            }
-        }
-
-        // 6. Gradient Subtract
-        if(gradienSubtractProgram) {
-            gl.useProgram(gradienSubtractProgram);
-            gl.uniform1i(gl.getUniformLocation(gradienSubtractProgram!, 'uPressure'), pressure.read.attach(0));
-            gl.uniform1i(gl.getUniformLocation(gradienSubtractProgram!, 'uVelocity'), velocity.read.attach(1));
-            gl.uniform2f(gl.getUniformLocation(gradienSubtractProgram!, 'texelSize'), velocity.texelSizeX, velocity.texelSizeY);
-            blit(velocity.write.fbo);
-            velocity.swap();
-        }
-
-        // 7. Advection Velocity
-        if(advectionProgram) {
-            gl.useProgram(advectionProgram);
-            gl.uniform2f(gl.getUniformLocation(advectionProgram!, 'texelSize'), velocity.texelSizeX, velocity.texelSizeY);
-            if (!velocity.read.attach(0)) return;
-            gl.uniform1i(gl.getUniformLocation(advectionProgram!, 'uVelocity'), 0);
-            gl.uniform1i(gl.getUniformLocation(advectionProgram!, 'uSource'), 0);
-            gl.uniform1f(gl.getUniformLocation(advectionProgram!, 'dt'), dt);
-            gl.uniform1f(gl.getUniformLocation(advectionProgram!, 'dissipation'), config.VELOCITY_DISSIPATION);
-            blit(velocity.write.fbo);
-            velocity.swap();
-        }
-
-        // 8. Advection Density (Dye)
-        gl.viewport(0, 0, dyeWidth, dyeHeight);
-        if(advectionProgram) {
-            gl.useProgram(advectionProgram);
-            gl.uniform2f(gl.getUniformLocation(advectionProgram!, 'texelSize'), density.texelSizeX, density.texelSizeY);
-            gl.uniform1i(gl.getUniformLocation(advectionProgram!, 'uVelocity'), velocity.read.attach(0));
-            gl.uniform1i(gl.getUniformLocation(advectionProgram!, 'uSource'), density.read.attach(1));
-            gl.uniform1f(gl.getUniformLocation(advectionProgram!, 'dissipation'), config.DENSITY_DISSIPATION);
-            blit(density.write.fbo);
-            density.swap();
-        }
-
-        // 9. Display
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        if(displayProgram) {
-            gl.useProgram(displayProgram);
-            gl.uniform1i(gl.getUniformLocation(displayProgram!, 'uTexture'), density.read.attach(0));
-            blit(null);
-        }
-
-        animId = requestAnimationFrame(update);
-    };
-
-    update();
-
-    const splat = (x: number, y: number, dx: number, dy: number, color: number[]) => {
-        if (!splatProgram) return;
-        
-        gl.useProgram(splatProgram);
-        gl.uniform1i(gl.getUniformLocation(splatProgram, 'uTarget'), velocity.read.attach(0));
-        gl.uniform1f(gl.getUniformLocation(splatProgram, 'aspectRatio'), canvas.width / canvas.height);
-        // Correcting coordinate system: WebGL 0,0 is bottom-left, clientY is top-left
-        gl.uniform2f(gl.getUniformLocation(splatProgram, 'point'), x / canvas.width, 1.0 - y / canvas.height);
-        gl.uniform3f(gl.getUniformLocation(splatProgram, 'color'), dx, -dy, 1.0);
-        gl.uniform1f(gl.getUniformLocation(splatProgram, 'radius'), config.SPLAT_RADIUS);
-        gl.viewport(0, 0, simWidth, simHeight);
-        blit(velocity.write.fbo);
-        velocity.swap();
-
-        gl.uniform1i(gl.getUniformLocation(splatProgram, 'uTarget'), density.read.attach(0));
-        gl.uniform3f(gl.getUniformLocation(splatProgram, 'color'), color[0], color[1], color[2]);
-        gl.viewport(0, 0, dyeWidth, dyeHeight);
-        blit(density.write.fbo);
-        density.swap();
-        
-        interactionCount.current++;
-        if (IS_DEVELOPER_MODE && interactionCount.current % 100 === 0) {
-            console.log(`[FidgetTool] Interactions: ${interactionCount.current}`);
-        }
-    };
-
-    const generateColor = () => {
-        const c = HSVtoRGB(Math.random(), 1.0, 1.0);
-        c.r *= 0.25; c.g *= 0.25; c.b *= 0.25;  // Increased from 0.15 to 0.25 for better visibility
-        return [c.r, c.g, c.b];
-    };
-
-    const HSVtoRGB = (h: number, s: number, v: number) => {
-        let r=0, g=0, b=0, i, f, p, q, t;
-        i = Math.floor(h * 6);
-        f = h * 6 - i;
-        p = v * (1 - s);
-        q = v * (1 - f * s);
-        t = v * (1 - (1 - f) * s);
-        switch (i % 6) {
-            case 0: r = v; g = t; b = p; break;
-            case 1: r = q; g = v; b = p; break;
-            case 2: r = p; g = v; b = t; break;
-            case 3: r = p; g = q; b = v; break;
-            case 4: r = t; g = p; b = v; break;
-            case 5: r = v; g = p; b = q; break;
-        }
-        return { r, g, b };
-    };
-
-    // --- INPUT HANDLING ---
-    
-    // Helper to process pointers (Mouse + Touch)
-    const updatePointer = (id: number, x: number, y: number, isDown: boolean) => {
-        if (isDown) {
-            let p = pointers.current.get(id);
-            if (!p) {
-                // New pointer
-                p = { x, y, color: generateColor(), dx: 0, dy: 0 };
-                pointers.current.set(id, p);
-                // Initial splat on touch down
-                splat(x, y, (Math.random()-0.5)*20, (Math.random()-0.5)*20, p.color);
-            } else {
-                // Moving pointer
-                const dx = x - p.x;
-                const dy = y - p.y;
-                p.x = x;
-                p.y = y;
-                // Add force proportional to movement
-                if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
-                    splat(x, y, dx * 8.0, dy * 8.0, p.color);
-                }
-            }
-        } else {
-            pointers.current.delete(id);
-        }
-    };
-
-    // Mouse Handlers
-    const onMouseDown = (e: MouseEvent) => {
-        if(IS_DEVELOPER_MODE) console.log("[FidgetTool] Mouse Down");
-        updatePointer(-1, e.offsetX, e.offsetY, true);
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-        // Only track mouse move if button is pressed (or if you want hover effect, remove checks)
-        // For standard "fluid" feel, usually tracking only on drag is preferred, but let's allow "hover" interaction?
-        // Actually, previous code only did drag. Let's stick to drag for mouse (buttons === 1).
-        if (e.buttons === 1) {
-            updatePointer(-1, e.offsetX, e.offsetY, true);
-        }
-    };
-
-    const onMouseUp = (e: MouseEvent) => {
-        if(IS_DEVELOPER_MODE) console.log("[FidgetTool] Mouse Up");
-        updatePointer(-1, e.offsetX, e.offsetY, false);
-    };
-
-    // Touch Handlers
-    const onTouchStart = (e: TouchEvent) => {
-        if(IS_DEVELOPER_MODE) console.log(`[FidgetTool] Touch Start (${e.changedTouches.length} touches)`);
-        e.preventDefault(); // Critical to prevent scrolling/zooming
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const t = e.changedTouches[i];
-            // Provide offset coordinates manually if needed, but clientX/Y usually work if canvas is full screen
-            // Getting bounding rect ensures accuracy
-            const rect = canvas?.getBoundingClientRect();
-            if (rect) {
-                updatePointer(t.identifier, t.clientX - rect.left, t.clientY - rect.top, true);
-            }
-        }
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-        e.preventDefault();
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const t = e.changedTouches[i];
-            const rect = canvas?.getBoundingClientRect();
-            if (rect) {
-                updatePointer(t.identifier, t.clientX - rect.left, t.clientY - rect.top, true);
-            }
-        }
-    };
-
-    const onTouchEnd = (e: TouchEvent) => {
-        if(IS_DEVELOPER_MODE) console.log("[FidgetTool] Touch End");
-        e.preventDefault();
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const t = e.changedTouches[i];
-            const rect = canvas?.getBoundingClientRect();
-            if (rect) {
-                updatePointer(t.identifier, t.clientX - rect.left, t.clientY - rect.top, false);
-            }
-        }
-    };
-
-    window.addEventListener('resize', resizeCanvas);
-    canvas.addEventListener('mousedown', onMouseDown);
-    canvas.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    
-    // Add passive: false to allow preventDefault
-    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
-    window.addEventListener('touchend', onTouchEnd);
-    window.addEventListener('touchcancel', onTouchEnd);
-
-    // Initial Splash
-    for(let i=0; i<3; i++) {
-        splat(Math.random()*canvas.width, Math.random()*canvas.height, (Math.random()-0.5)*200, (Math.random()-0.5)*200, generateColor());
     }
-
-    return () => {
-        cancelAnimationFrame(animId);
-        window.removeEventListener('resize', resizeCanvas);
-        
-        if (canvas) {
-            canvas.removeEventListener('mousedown', onMouseDown);
-            canvas.removeEventListener('mousemove', onMouseMove);
-            canvas.removeEventListener('touchstart', onTouchStart);
-            canvas.removeEventListener('touchmove', onTouchMove);
-            canvas.removeEventListener('touchend', onTouchEnd);
-            canvas.removeEventListener('touchcancel', onTouchEnd);
-        }
-        window.removeEventListener('mouseup', onMouseUp);
-    };
-
-  }, [reducedMotion]);
+  }, []);
 
   const handleClose = () => {
+    if (IS_DEVELOPER_MODE) console.log('[FidgetTool] handleClose called');
+
     const durationSeconds = (Date.now() - startTime) / 1000;
-    const intensity = interactionCount.current > 200 ? 'high' : interactionCount.current > 50 ? 'medium' : 'low';
     const startTimeISO = new Date(startTime).toISOString();
-    onClose({ 
+
+    if (IS_DEVELOPER_MODE) {
+      console.log('[FidgetTool] Session stats:');
+      console.log(`  - Duration: ${durationSeconds.toFixed(2)}s`);
+      console.log(`  - Shots: ${shotCount.current}`);
+      console.log(`  - Drags: ${dragCount.current}`);
+    }
+
+    // Cleanup engine
+    if (runnerRef.current && engineRef.current) {
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Stopping runner (handleClose)');
+      Matter.Runner.stop(runnerRef.current);
+    }
+    if (renderRef.current) {
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Stopping renderer (handleClose)');
+      Matter.Render.stop(renderRef.current);
+    }
+    if (engineRef.current) {
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Clearing engine (handleClose)');
+      Matter.Engine.clear(engineRef.current);
+    }
+
+    if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Calling onClose callback');
+
+    onClose({
       startTime: startTimeISO,
-      durationSeconds, 
-      intensity,
-      interactions: interactionCount.current
+      durationSeconds,
+      shots: shotCount.current,
+      drags: dragCount.current
     });
   };
 
+  // Handle ESC key to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [startTime]);
+
+  if (IS_DEVELOPER_MODE) {
+    console.log('[FidgetTool] Rendering component');
+    console.log('[FidgetTool] showInstructions:', showInstructions);
+  }
+
   return (
-    <div className="fixed inset-0 z-50 bg-black touch-none">
-      <canvas 
-        ref={canvasRef} 
-        className="block w-full h-full cursor-pointer"
-      />
+    <div className="fixed inset-0 z-50 bg-black">
+      <div ref={containerRef} className="w-full h-full relative" style={{ pointerEvents: 'auto' }} />
+
       <button
         onClick={handleClose}
-        className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all border border-white/20 z-50"
+        className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 active:bg-white/30 transition-all border border-white/20 z-50 hover:scale-110 active:scale-95"
         aria-label="Cerrar"
+        title="Toca aquí para salir (o presiona ESC)"
       >
-        <X size={24} />
+        <X size={28} />
       </button>
+
+      {/* Instructions overlay (shows briefly at start) */}
+      {showInstructions && (
+        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-black/70 backdrop-blur-md rounded-lg px-6 py-3 text-white text-center border border-white/20 animate-pulse-slow">
+          <p className="text-sm">Arrastra y suelta el círculo blanco para derribar las torres</p>
+        </div>
+      )}
     </div>
   );
 };
