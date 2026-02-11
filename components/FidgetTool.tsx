@@ -213,14 +213,15 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
       elasticRef.current = elastic;
       if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Elastic constraint created');
 
-      // Visual anchor point
+      // Visual anchor point (sensor = visible but no collision)
       const anchorVisual = Bodies.circle(anchorX, anchorY, 8, {
         isStatic: true,
+        isSensor: true, // Prevents collision with the rock
         render: {
           fillStyle: '#888888'
         }
       });
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Anchor visual created');
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Anchor visual created (sensor mode)');
 
       // Add all bodies to world
       if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Adding all bodies to world...');

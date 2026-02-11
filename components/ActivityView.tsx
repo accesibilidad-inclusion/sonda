@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { ArrowLeft, Camera, Mic, Type, SkipForward, HelpCircle, MessageSquare, Trash2, Pencil, Video, PlayCircle } from 'lucide-react';
 import { Activity, ResponseMode, ResponseItem } from '../types';
+import { IS_DEVELOPER_MODE } from '../constants';
 
 interface ActivityViewProps {
   activity: Activity;
@@ -105,50 +106,121 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
   };
 
   const startRecording = async () => {
+    if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Starting recording...');
+
+    // Check if browser supports audio recording
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const errorMsg = "Tu navegador no soporta grabación de audio. Intenta usar Chrome, Firefox o Safari actualizado.";
+      if (IS_DEVELOPER_MODE) console.error('[AudioRecording] getUserMedia not supported');
+      alert(errorMsg);
+      return;
+    }
+
+    if (typeof MediaRecorder === 'undefined') {
+      const errorMsg = "MediaRecorder no está disponible en tu navegador.";
+      if (IS_DEVELOPER_MODE) console.error('[AudioRecording] MediaRecorder not available');
+      alert(errorMsg);
+      return;
+    }
+
     try {
+      if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Requesting microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
+      if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Microphone access granted', stream);
+
       // Determine supported mime type
       let mimeType = 'audio/webm';
       if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
           mimeType = 'audio/webm;codecs=opus';
       } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
           mimeType = 'audio/mp4'; // Safari support
+      } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+          mimeType = 'audio/ogg;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+          mimeType = 'audio/wav';
       }
+
+      if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Using MIME type: ${mimeType}`);
 
       const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
+      if (IS_DEVELOPER_MODE) console.log('[AudioRecording] MediaRecorder created', mediaRecorder);
+
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
+          if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Data chunk received: ${event.data.size} bytes`);
         }
       };
 
       mediaRecorder.onstop = () => {
+        if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Recording stopped');
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Audio blob created: ${audioBlob.size} bytes`);
+
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = () => {
           const base64Audio = reader.result as string;
+          if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Base64 audio length: ${base64Audio.length}`);
+
            // Check size (~4MB limit for base64 string to be safe with 5MB localStorage)
-           if (base64Audio.length > 4 * 1024 * 1024) { 
+           if (base64Audio.length > 4 * 1024 * 1024) {
              alert("El audio es demasiado largo para guardarse localmente. Intenta grabar algo más corto.");
+             if (IS_DEVELOPER_MODE) console.warn('[AudioRecording] Audio too large for localStorage');
            } else {
+             if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Saving audio response');
              addResponse(base64Audio, ResponseMode.AUDIO);
            }
         };
-        
+
         // Stop all tracks to release microphone
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(track => {
+          track.stop();
+          if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Audio track stopped');
+        });
+      };
+
+      mediaRecorder.onerror = (event) => {
+        if (IS_DEVELOPER_MODE) console.error('[AudioRecording] MediaRecorder error:', event);
+        alert("Ocurrió un error durante la grabación. Por favor intenta de nuevo.");
       };
 
       mediaRecorder.start();
       setIsRecording(true);
+      if (IS_DEVELOPER_MODE) console.log('[AudioRecording] ✅ Recording started successfully');
     } catch (error) {
-      console.error("Error accessing microphone:", error);
-      alert("No se pudo acceder al micrófono. Por favor verifica los permisos del navegador.");
+      if (IS_DEVELOPER_MODE) {
+        console.error("[AudioRecording] ❌ Error accessing microphone:", error);
+        if (error instanceof Error) {
+          console.error('[AudioRecording] Error name:', error.name);
+          console.error('[AudioRecording] Error message:', error.message);
+        }
+      }
+
+      let errorMessage = "No se pudo acceder al micrófono. ";
+
+      if (error instanceof DOMException) {
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          errorMessage += "Debes permitir el acceso al micrófono en la configuración de tu navegador.";
+        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+          errorMessage += "No se detectó ningún micrófono conectado.";
+        } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+          errorMessage += "El micrófono está siendo usado por otra aplicación.";
+        } else if (error.name === 'OverconstrainedError') {
+          errorMessage += "No se encontró un micrófono que cumpla con los requisitos.";
+        } else if (error.name === 'SecurityError') {
+          errorMessage += "Acceso denegado por motivos de seguridad. Asegúrate de usar HTTPS o localhost.";
+        } else {
+          errorMessage += `Error: ${error.name}`;
+        }
+      } else {
+        errorMessage += "Por favor verifica los permisos del navegador.";
+      }
+
+      alert(errorMessage);
     }
   };
 

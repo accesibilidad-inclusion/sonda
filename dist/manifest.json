@@ -1,0 +1,19 @@
+{
+  "name": "Sonda Digital",
+  "short_name": "Sonda",
+  "description": "Sonda de diseño para estudiantes universitarios en el espectro autista",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f0f4f8",
+  "theme_color": "#4a90e2",
+  "orientation": "portrait",
+  "scope": "./",
+  "icons": [
+    {
+      "src": "favicon.png",
+      "sizes": "222x222",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
