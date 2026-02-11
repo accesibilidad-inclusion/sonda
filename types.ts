@@ -43,8 +43,8 @@ export interface WeekModule {
 export interface FidgetSession {
   startTime: string; // ISO 8601 timestamp when user started the fidget
   durationSeconds: number; // Length of the session in seconds
-  intensity: 'low' | 'medium' | 'high'; // Based on interaction count
-  interactions: number; // Total splat/interaction count during session
+  shots: number; // Number of times the ball was released from the slingshot
+  drags: number; // Number of times the ball was grabbed/dragged
 }
 
 // Sensory Profile Types
