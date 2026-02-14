@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, RefreshCw } from 'lucide-react';
 import { IS_DEVELOPER_MODE } from '../constants';
 import Matter from 'matter-js';
 
@@ -16,10 +16,19 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
   const engineRef = useRef<Matter.Engine | null>(null);
   const renderRef = useRef<Matter.Render | null>(null);
   const runnerRef = useRef<Matter.Runner | null>(null);
-  const rockRef = useRef<Matter.Body | null>(null);
-  const elasticRef = useRef<Matter.Constraint | null>(null);
-  const anchorRef = useRef<{ x: number; y: number } | null>(null);
   const [showInstructions, setShowInstructions] = useState(true);
+  const [regenerateKey, setRegenerateKey] = useState(0);
+
+  // Slingshot state (situational)
+  const slingshotState = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const towerBodiesRef = useRef<Matter.Body[]>([]);
 
   const colors = ['#E94B91', '#03A9F5', '#00BCD4', '#FFA500', '#FFEB3B', '#8BC34A'];
 
@@ -48,10 +57,9 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
       const Runner = Matter.Runner;
       const World = Matter.World;
       const Bodies = Matter.Bodies;
-      const Constraint = Matter.Constraint;
+      const Events = Matter.Events;
       const Mouse = Matter.Mouse;
       const MouseConstraint = Matter.MouseConstraint;
-      const Events = Matter.Events;
 
       if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Matter.js modules extracted successfully');
 
@@ -96,14 +104,15 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
 
       // Define collision categories
       const rockCategory = 0x0001;
-      const anchorCategory = 0x0002;
       const otherCategory = 0x0004;
 
-      // Create walls and ground
+      // Create walls and ground - OUTSIDE visible area, very thick
       if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating walls and ground...');
 
-      const wallThickness = 20;
-      const ground = Bodies.rectangle(width / 2, height - 25, width, 50, {
+      const wallThickness = width; // Very thick walls
+
+      // Ground - below visible area
+      const ground = Bodies.rectangle(width / 2, height + wallThickness / 2, width * 3, wallThickness, {
         isStatic: true,
         restitution: 0.8,
         collisionFilter: {
@@ -115,8 +124,21 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
         }
       });
 
-      // Left wall
-      const leftWall = Bodies.rectangle(wallThickness / 2, height / 2, wallThickness, height, {
+      // Ceiling - above visible area
+      const ceiling = Bodies.rectangle(width / 2, -wallThickness / 2, width * 3, wallThickness, {
+        isStatic: true,
+        restitution: 0.8,
+        collisionFilter: {
+          category: otherCategory,
+          mask: rockCategory | otherCategory
+        },
+        render: {
+          fillStyle: '#1a1a1a'
+        }
+      });
+
+      // Left wall - outside left edge
+      const leftWall = Bodies.rectangle(-wallThickness / 2, height / 2, wallThickness, height * 3, {
         isStatic: true,
         restitution: 0.8,
         collisionFilter: {
@@ -128,8 +150,8 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
         }
       });
 
-      // Right wall
-      const rightWall = Bodies.rectangle(width - wallThickness / 2, height / 2, wallThickness, height, {
+      // Right wall - outside right edge
+      const rightWall = Bodies.rectangle(width + wallThickness / 2, height / 2, wallThickness, height * 3, {
         isStatic: true,
         restitution: 0.8,
         collisionFilter: {
@@ -141,50 +163,34 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
         }
       });
 
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Ground and walls created');
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Ground and walls created (outside visible area)');
 
-      // Create random shelves (repisas) with stacked boxes
-      const shelves: Matter.Body[] = [];
-      const boxes: Matter.Body[] = [];
+      // Function to create a central tower
+      const createTower = () => {
+        const towerBodies: Matter.Body[] = [];
 
-      // Create 4-6 shelves at different heights on BOTH sides
-      const numShelves = 4 + Math.floor(Math.random() * 3); // 4-6 shelves
-      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Creating ${numShelves} shelves on both sides...`);
+        // Tower configuration
+        const centerX = width / 2;
+        const towerHeight = height * 0.75; // 3/4 of screen height
+        const numElements = 3 + Math.floor(Math.random() * 2); // 3-4 elements
+        const elementHeight = towerHeight / numElements;
 
-      for (let i = 0; i < numShelves; i++) {
-        const shelfY = height * 0.2 + (Math.random() * height * 0.5); // Random heights
-        // Alternate between left and right, or random
-        const isLeft = i % 2 === 0;
-        const shelfX = isLeft
-          ? wallThickness + 50 + (Math.random() * (width * 0.25)) // Left side
-          : width - wallThickness - 50 - (Math.random() * (width * 0.25)); // Right side
-        const shelfWidth = 40 + Math.random() * 20; // Very narrow shelves (40-60px)
+        if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Creating central tower with ${numElements} elements`);
 
-        // Create shelf
-        const shelf = Bodies.rectangle(shelfX, shelfY, shelfWidth, 20, {
-          isStatic: true,
-          collisionFilter: {
-            category: otherCategory,
-            mask: rockCategory | otherCategory
-          },
-          render: {
-            fillStyle: '#2a2a2a'
-          }
-        });
-        shelves.push(shelf);
+        for (let i = 0; i < numElements; i++) {
+          // Start from bottom, stack upwards
+          const yPos = height - (i + 0.5) * elementHeight;
 
-        // Stack boxes on shelf (vertical tower)
-        const numBoxes = 5 + Math.floor(Math.random() * 5); // 5-9 boxes
-        const boxWidth = 30;
-        const boxHeight = 40;
+          // Larger, wider elements
+          const elementWidth = 80 + Math.random() * 60; // 80-140px wide
+          const elementH = elementHeight * 0.8; // Use 80% of available space
 
-        for (let j = 0; j < numBoxes; j++) {
-          const box = Bodies.rectangle(
-            shelfX,
-            shelfY - 20 - (j * boxHeight) - boxHeight / 2,
-            boxWidth,
-            boxHeight,
-            {
+          let shape: Matter.Body;
+
+          // Top element (last one) can be a triangle (most unstable)
+          if (i === numElements - 1) {
+            // Triangle at the top (cusp)
+            shape = Bodies.polygon(centerX, yPos, 3, elementWidth / 3, {
               density: 0.001,
               friction: 0.8,
               restitution: 0.3,
@@ -195,137 +201,105 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
               render: {
                 fillStyle: colors[Math.floor(Math.random() * colors.length)]
               }
+            });
+          } else {
+            // Bottom and middle elements: stable shapes only
+            const shapeType = Math.floor(Math.random() * 3);
+
+            switch (shapeType) {
+              case 0: // Trapezoid with WIDE base (more stable)
+                shape = Bodies.trapezoid(centerX, yPos, elementWidth, elementH, 0.3 + Math.random() * 0.2, {
+                  density: 0.001,
+                  friction: 0.8,
+                  restitution: 0.3,
+                  collisionFilter: {
+                    category: otherCategory,
+                    mask: rockCategory | otherCategory
+                  },
+                  render: {
+                    fillStyle: colors[Math.floor(Math.random() * colors.length)]
+                  }
+                });
+                break;
+
+              case 1: // Hexagon (6 sides - even, stable)
+                shape = Bodies.polygon(centerX, yPos, 6, elementWidth / 2, {
+                  density: 0.001,
+                  friction: 0.8,
+                  restitution: 0.3,
+                  angle: Math.PI / 6, // 30 degrees - flat base
+                  collisionFilter: {
+                    category: otherCategory,
+                    mask: rockCategory | otherCategory
+                  },
+                  render: {
+                    fillStyle: colors[Math.floor(Math.random() * colors.length)]
+                  }
+                });
+                break;
+
+              default: // Rectangle (most stable)
+                shape = Bodies.rectangle(centerX, yPos, elementWidth, elementH, {
+                  density: 0.001,
+                  friction: 0.8,
+                  restitution: 0.3,
+                  angle: (Math.random() - 0.5) * 0.1, // Very slight rotation
+                  collisionFilter: {
+                    category: otherCategory,
+                    mask: rockCategory | otherCategory
+                  },
+                  render: {
+                    fillStyle: colors[Math.floor(Math.random() * colors.length)]
+                  }
+                });
             }
-          );
-          boxes.push(box);
+          }
+
+          towerBodies.push(shape);
         }
-      }
 
-      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Created ${shelves.length} shelves and ${boxes.length} boxes`);
-
-      // Create slingshot anchor (bottom center, raised higher)
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating slingshot...');
-      const anchorX = width * 0.5; // Center horizontally
-      const anchorY = height - 250; // Higher up from bottom
-      const anchor = { x: anchorX, y: anchorY };
-      anchorRef.current = anchor;
-      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Anchor at (${anchorX}, ${anchorY})`);
-
-      // Create rock (projectile) - collides with everything EXCEPT anchor
-      const rockOptions = {
-        density: 0.004,
-        friction: 0.5,
-        restitution: 0.8,
-        collisionFilter: {
-          category: rockCategory,
-          mask: otherCategory // Only collides with "other" objects, not anchor
-        },
-        render: {
-          fillStyle: '#FFFFFF'
-        }
+        if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Created ${towerBodies.length} tower elements`);
+        return towerBodies;
       };
 
-      const rock = Bodies.circle(anchorX, anchorY, 15, rockOptions);
-      rockRef.current = rock;
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Rock created with collision filter');
-
-      // Create elastic constraint (slingshot)
-      const elastic = Constraint.create({
-        pointA: anchor,
-        bodyB: rock,
-        stiffness: 0.05,
-        render: {
-          lineWidth: 3,
-          strokeStyle: '#666666'
-        }
-      });
-      elasticRef.current = elastic;
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Elastic constraint created');
-
-      // Visual anchor point - rock won't collide with it
-      const anchorVisual = Bodies.circle(anchorX, anchorY, 8, {
-        isStatic: true,
-        collisionFilter: {
-          category: anchorCategory,
-          mask: 0 // Doesn't collide with anything
-        },
-        render: {
-          fillStyle: '#888888'
-        }
-      });
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Anchor visual created with no collision');
+      // Create initial tower
+      const towerBodies = createTower();
 
       // Add all bodies to world
       if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Adding all bodies to world...');
-      World.add(world, [ground, leftWall, rightWall, ...shelves, ...boxes, rock, elastic, anchorVisual]);
-      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Added ${1 + 2 + shelves.length + boxes.length + 2 + 1} bodies to world (including walls)`);
+      World.add(world, [ground, ceiling, leftWall, rightWall, ...towerBodies]);
+      if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Added ${4 + towerBodies.length} bodies to world`);
 
-      // Track mouse constraint for drag counting
-      let isDragging = false;
-      let hasShotThisRock = false;
+      // Store reference to tower bodies for regeneration
+      towerBodiesRef.current = towerBodies;
 
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Setting up afterUpdate event...');
+      // Function to regenerate tower
+      const regenerateTower = () => {
+        if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Regenerating tower...');
 
-      // Reset rock after shot
-      Events.on(engine, 'afterUpdate', function() {
-        if (!rockRef.current || !elasticRef.current || !anchorRef.current) return;
+        // Remove old tower bodies from world
+        towerBodiesRef.current.forEach(body => {
+          World.remove(engine.world, body);
+        });
 
-        const currentRock = rockRef.current;
-        const currentElastic = elasticRef.current;
-        const distance = Matter.Vector.magnitude(
-          Matter.Vector.sub(currentRock.position, anchorRef.current)
-        );
+        // Create new tower
+        const newTowerBodies = createTower();
 
-        // If rock is released and has moved away from anchor (release the slingshot)
-        if (distance > 50 && !isDragging && !hasShotThisRock) {
-          hasShotThisRock = true;
+        // Add new tower to world
+        World.add(engine.world, newTowerBodies);
 
-          // IMPORTANT: Remove the elastic constraint to release the rock
-          World.remove(engineRef.current!.world, currentElastic);
-          if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Elastic constraint removed - rock is free!');
+        // Update reference
+        towerBodiesRef.current = newTowerBodies;
 
-          // Count as a shot
-          shotCount.current++;
-          if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Shot #${shotCount.current}`);
+        if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Tower regenerated!');
+      };
 
-          // Wait a bit before resetting
-          setTimeout(() => {
-            if (!engineRef.current || !anchorRef.current) return;
+      // Expose regenerate function
+      (window as any).__fidgetRegenerate = regenerateTower;
 
-            // Remove old rock
-            World.remove(engineRef.current.world, currentRock);
-            if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Old rock removed');
-
-            // Create new rock
-            const newRock = Bodies.circle(anchorRef.current.x, anchorRef.current.y, 15, rockOptions);
-            rockRef.current = newRock;
-            World.add(engineRef.current.world, newRock);
-            if (IS_DEVELOPER_MODE) console.log('[FidgetTool] New rock created and added');
-
-            // Create NEW elastic constraint for the new rock
-            const newElastic = Constraint.create({
-              pointA: anchorRef.current,
-              bodyB: newRock,
-              stiffness: 0.05,
-              render: {
-                lineWidth: 3,
-                strokeStyle: '#666666'
-              }
-            });
-            elasticRef.current = newElastic;
-            World.add(engineRef.current.world, newElastic);
-            if (IS_DEVELOPER_MODE) console.log('[FidgetTool] New elastic constraint created and added');
-
-            hasShotThisRock = false;
-          }, 2000);
-        }
-      });
-
-      // Add mouse control
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Creating mouse control...');
+      // Add mouse control for dragging bodies
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Setting up mouse control...');
       const mouse = Mouse.create(render.canvas);
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Mouse created', mouse);
-
       const mouseConstraint = MouseConstraint.create(engine, {
         mouse: mouse,
         constraint: {
@@ -335,30 +309,169 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
           }
         }
       });
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] MouseConstraint created', mouseConstraint);
 
-      // Track dragging
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Setting up drag events...');
-      Events.on(mouseConstraint, 'startdrag', function(event: Matter.IEventCollision<Matter.MouseConstraint>) {
-        // Only count drags on the rock
-        if (event.body === rockRef.current) {
-          isDragging = true;
-          dragCount.current++;
-          if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Drag #${dragCount.current}`);
-        }
+      World.add(world, mouseConstraint);
+      render.mouse = mouse;
+
+      // Track if user is dragging a body
+      let isDraggingBody = false;
+
+      // Situational Slingshot Logic (only when NOT dragging a body)
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Setting up situational slingshot...');
+
+      canvasRef.current = render.canvas;
+
+      Events.on(mouseConstraint, 'startdrag', function() {
+        isDraggingBody = true;
+        dragCount.current++;
+        if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Dragging body #${dragCount.current}`);
       });
 
       Events.on(mouseConstraint, 'enddrag', function() {
-        isDragging = false;
+        isDraggingBody = false;
       });
 
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Adding mouseConstraint to world...');
-      World.add(world, mouseConstraint);
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] MouseConstraint added');
+      // Mouse/Touch down: check if on empty space
+      const handlePointerDown = (x: number, y: number) => {
 
-      // Keep mouse in sync with rendering
-      render.mouse = mouse;
-      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Mouse synced with renderer');
+        // Check if there's a body at this position
+        const bodies = Matter.Composite.allBodies(engine.world);
+        let bodyFound = false;
+
+        for (const body of bodies) {
+          if (!body.isStatic &&
+              Matter.Bounds.contains(body.bounds, { x, y }) &&
+              Matter.Vertices.contains(body.vertices, { x, y })) {
+            bodyFound = true;
+            break;
+          }
+        }
+
+        // Only start slingshot if clicking on empty space
+        if (!bodyFound) {
+          slingshotState.current = {
+            active: true,
+            startX: x,
+            startY: y,
+            currentX: x,
+            currentY: y
+          };
+          if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Slingshot started at (${x}, ${y})`);
+        }
+      };
+
+      const handlePointerMove = (x: number, y: number) => {
+        if (slingshotState.current?.active && !isDraggingBody) {
+          slingshotState.current.currentX = x;
+          slingshotState.current.currentY = y;
+        }
+      };
+
+      const handlePointerUp = () => {
+        if (slingshotState.current?.active && !isDraggingBody) {
+          const { startX, startY, currentX, currentY } = slingshotState.current;
+
+          // Calculate force vector (opposite direction of drag)
+          const deltaX = startX - currentX;
+          const deltaY = startY - currentY;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+          if (distance > 10) { // Minimum drag distance
+            // Create and launch projectile
+            const rock = Bodies.circle(startX, startY, 15, {
+              density: 0.004,
+              friction: 0.5,
+              restitution: 0.8,
+              collisionFilter: {
+                category: rockCategory,
+                mask: otherCategory
+              },
+              render: {
+                fillStyle: '#FFFFFF'
+              }
+            });
+
+            // Apply force (scale by distance for power) - MULTIPLIED BY 15x
+            const forceMagnitude = Math.min(distance * 0.0045, 0.75); // Cap max force (15x stronger)
+            const forceX = (deltaX / distance) * forceMagnitude;
+            const forceY = (deltaY / distance) * forceMagnitude;
+
+            World.add(engine.world, rock);
+            Matter.Body.applyForce(rock, { x: startX, y: startY }, { x: forceX, y: forceY });
+
+            shotCount.current++;
+            if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Shot #${shotCount.current} with force (${forceX}, ${forceY})`);
+
+            // Remove rock after 5 seconds to prevent clutter
+            setTimeout(() => {
+              if (engineRef.current) {
+                World.remove(engineRef.current.world, rock);
+              }
+            }, 5000);
+          }
+
+          slingshotState.current = null;
+        }
+      };
+
+      // Mouse events
+      render.canvas.addEventListener('mousedown', (e: MouseEvent) => {
+        const rect = render.canvas.getBoundingClientRect();
+        handlePointerDown(e.clientX - rect.left, e.clientY - rect.top);
+      });
+
+      render.canvas.addEventListener('mousemove', (e: MouseEvent) => {
+        const rect = render.canvas.getBoundingClientRect();
+        handlePointerMove(e.clientX - rect.left, e.clientY - rect.top);
+      });
+
+      render.canvas.addEventListener('mouseup', () => {
+        handlePointerUp();
+      });
+
+      // Touch events
+      render.canvas.addEventListener('touchstart', (e: TouchEvent) => {
+        e.preventDefault();
+        if (e.touches.length > 0) {
+          const rect = render.canvas.getBoundingClientRect();
+          handlePointerDown(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
+        }
+      });
+
+      render.canvas.addEventListener('touchmove', (e: TouchEvent) => {
+        if (e.touches.length > 0) {
+          const rect = render.canvas.getBoundingClientRect();
+          handlePointerMove(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
+        }
+      });
+
+      render.canvas.addEventListener('touchend', () => {
+        handlePointerUp();
+      });
+
+      // Custom render to draw red slingshot line
+      Events.on(render, 'afterRender', function() {
+        if (slingshotState.current?.active) {
+          const { startX, startY, currentX, currentY } = slingshotState.current;
+          const context = render.context;
+
+          // Draw red line
+          context.strokeStyle = '#FF0000';
+          context.lineWidth = 3;
+          context.beginPath();
+          context.moveTo(startX, startY);
+          context.lineTo(currentX, currentY);
+          context.stroke();
+
+          // Draw circle at start point
+          context.fillStyle = '#FF0000';
+          context.beginPath();
+          context.arc(startX, startY, 8, 0, 2 * Math.PI);
+          context.fill();
+        }
+      });
+
+      if (IS_DEVELOPER_MODE) console.log('[FidgetTool] Situational slingshot setup complete');
 
       // Handle window resize
       const handleResize = () => {
@@ -501,6 +614,21 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
     <div className="fixed inset-0 z-50 bg-black">
       <div ref={containerRef} className="w-full h-full relative" style={{ pointerEvents: 'auto' }} />
 
+      {/* Regenerate button - Top Left */}
+      <button
+        onClick={() => {
+          if ((window as any).__fidgetRegenerate) {
+            (window as any).__fidgetRegenerate();
+          }
+        }}
+        className="absolute top-6 left-6 p-3 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 active:bg-white/30 transition-all border border-white/20 z-50 hover:scale-110 active:scale-95"
+        aria-label="Regenerar escena"
+        title="Generar nueva torre"
+      >
+        <RefreshCw size={28} />
+      </button>
+
+      {/* Close button - Top Right */}
       <button
         onClick={handleClose}
         className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 active:bg-white/30 transition-all border border-white/20 z-50 hover:scale-110 active:scale-95"
@@ -513,7 +641,7 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
       {/* Instructions overlay (shows briefly at start) */}
       {showInstructions && (
         <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-black/70 backdrop-blur-md rounded-lg px-6 py-3 text-white text-center border border-white/20 animate-pulse-slow">
-          <p className="text-sm">Arrastra y suelta el círculo blanco para derribar las torres</p>
+          <p className="text-sm">Toca un espacio vacío y arrastra para lanzar pelotas y derribar las torres</p>
         </div>
       )}
     </div>

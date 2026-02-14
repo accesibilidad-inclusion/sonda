@@ -177,17 +177,38 @@ const ConsentScreen = ({ onAccept }: { onAccept: () => Promise<void> }) => {
   );
 };
 
-const TutorialScreen = ({ onFinish }: { onFinish: () => void }) => (
-  <div className="flex flex-col items-center justify-center min-h-screen p-8 bg-calm-bg text-center">
-    <h2 className="text-2xl font-bold mb-6">Probemos sin presión</h2>
-    <p className="text-deep-text mb-8">
-      Para empezar, familiarízate con el entorno. Toca el botón de "Fidget" abajo (el icono de la galaxia) cuando necesites un descanso.
-    </p>
-    <button onClick={onFinish} className="w-full max-w-xs py-3 bg-deep-text text-calm-bg rounded-xl font-bold">
-      ¡Listo, vamos!
-    </button>
-  </div>
-);
+const TutorialScreen = ({ onFinish }: { onFinish: () => void }) => {
+  const [step, setStep] = useState(1);
+
+  if (step === 1) {
+    return (
+      <div className="flex flex-col justify-center min-h-screen p-8 bg-calm-bg">
+        <h2 className="text-2xl font-bold mb-6">Comencemos, sin presión</h2>
+        <p className="text-deep-text text-lg max-w-2xl mb-8">
+          Para empezar, familiarízate con el entorno de esta <strong>bitácora</strong> diseñada para ayudarte a explorar tu experiencia en el entorno universitario, con herramientas que respetan tu ritmo y necesidades.</p>
+          <p className="text-deep-text text-lg max-w-2xl mb-12">Puedes navegar libremente entre las secciones, responder las preguntas que te parezcan relevantes y usar la herramienta de regulación para sentirte más cómodo/a. No hay prisa, todo lo que hagas será confidencial y solo tú decides qué compartir.</p>
+        <button onClick={() => setStep(2)} className="w-full max-w-xs py-3 bg-deep-text text-calm-bg rounded-xl font-bold">
+          Cómo funciona
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col justify-center min-h-screen p-8 bg-calm-bg">
+      <h2 className="text-2xl font-bold mb-6">Cómo usar la bitácora</h2>
+      <ol className="list-decimal pl-8 text-lg text-left max-w-md mb-10 text-deep-text opacity-90">
+        <li class="mb-4 mt-10">Sube tus entradas en la forma que prefieras (voz, texto o imágenes)</li>
+        <li class="mb-4">Puedes subir muchas respuestas a cada actividad, y siempre podrás modificarlas</li>
+        <li class="mb-4">Cada semana se desbloquean nuevas actividades semanales</li>
+        <li class="mb-4">Usa el botón morado de abajo para descansar cuando lo necesites</li>
+      </ol>
+      <button onClick={onFinish} className="w-full max-w-xs py-3 bg-deep-text text-calm-bg rounded-xl font-bold">
+        ¡Listo, vamos!
+      </button>
+    </div>
+  );
+};
 
 const App = () => {
   const [screen, setScreen] = useState<AppScreen>(AppScreen.ONBOARDING_WELCOME);

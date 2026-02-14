@@ -19,8 +19,10 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
   
   // Media Recording Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const [showMediaMenu, setShowMediaMenu] = useState(false);
 
   // --- ACTIONS ---
 
@@ -62,6 +64,21 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
           setMode(ResponseMode.TEXT);
       }
   };
+
+  // Close media menu when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (showMediaMenu) {
+        const target = e.target as HTMLElement;
+        if (!target.closest('.media-menu-container')) {
+          setShowMediaMenu(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMediaMenu]);
 
   const resetForm = () => {
       setIsSubmitting(false);
@@ -243,17 +260,46 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
 
   const renderModeSelector = () => (
     <div className="grid grid-cols-3 gap-4 mt-8">
-      <button 
-        onClick={() => fileInputRef.current?.click()}
-        className="flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
-      >
-        <div className="p-3 mb-2 text-white bg-blue-500 rounded-full">
-          <Camera size={24} />
-        </div>
-        <span className="text-sm font-medium text-deep-text">Foto/Video</span>
-      </button>
+      {/* Photo/Video Button with Menu */}
+      <div className="relative media-menu-container">
+        <button
+          onClick={() => setShowMediaMenu(!showMediaMenu)}
+          className="w-full flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
+        >
+          <div className="p-3 mb-2 text-white bg-blue-500 rounded-full">
+            <Camera size={24} />
+          </div>
+          <span className="text-sm font-medium text-deep-text">Foto/Video</span>
+        </button>
 
-      <button 
+        {/* Dropdown Menu */}
+        {showMediaMenu && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-card-bg border-2 border-soft-gray rounded-lg shadow-lg overflow-hidden z-20 animate-fade-in">
+            <button
+              onClick={() => {
+                cameraInputRef.current?.click();
+                setShowMediaMenu(false);
+              }}
+              className="w-full flex items-center p-3 hover:bg-calm-bg transition-colors text-left border-b border-soft-gray"
+            >
+              {/* <Camera size={20} className="text-blue-500" /> */}
+              <span className="text-sm font-medium text-deep-text">Tomar foto/video</span>
+            </button>
+            <button
+              onClick={() => {
+                fileInputRef.current?.click();
+                setShowMediaMenu(false);
+              }}
+              className="w-full flex items-center p-3 hover:bg-calm-bg transition-colors text-left"
+            >
+              {/* <PlayCircle size={20} className="text-blue-500" /> */}
+              <span className="text-sm font-medium text-deep-text">Subir desde galería</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      <button
         onClick={() => setMode(ResponseMode.AUDIO)}
         className="flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
       >
@@ -263,7 +309,7 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
         <span className="text-sm font-medium text-deep-text">Audio</span>
       </button>
 
-      <button 
+      <button
         onClick={() => setMode(ResponseMode.TEXT)}
         className="flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
       >
@@ -272,12 +318,24 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
         </div>
         <span className="text-sm font-medium text-deep-text">Texto</span>
       </button>
-      
-      <input 
-        type="file" 
-        accept="image/*,video/*" 
-        ref={fileInputRef} 
-        className="hidden" 
+
+      {/* Hidden file inputs */}
+      {/* Input for CAMERA (with capture) - Android/iOS camera */}
+      <input
+        type="file"
+        accept="image/*,video/*"
+        capture="environment"
+        ref={cameraInputRef}
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {/* Input for GALLERY (without capture) - File picker */}
+      <input
+        type="file"
+        accept="image/*,video/*"
+        ref={fileInputRef}
+        className="hidden"
         onChange={handleFileChange}
       />
     </div>

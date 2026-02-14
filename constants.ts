@@ -2,7 +2,7 @@ import { WeekModule } from './types';
 
 // --- CONFIGURACIÓN DE DESARROLLADOR ---
 // Cambia esto a TRUE para desbloquear todas las semanas automáticamente.
-export const IS_DEVELOPER_MODE = false; 
+export const IS_DEVELOPER_MODE = true; 
 // --------------------------------------
 
 export const APP_NAME = "Sonda Digital";
