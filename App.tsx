@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppScreen, Activity, WeekModule, SensoryProfile, ResponseItem } from './types';
-import { Menu, LifeBuoy, Zap, CheckCircle, Lock, ChevronRight, Settings, FileText, CheckSquare, Square, MessageSquare, Orbit, Loader2, CalendarClock } from 'lucide-react';
+import { Menu, LifeBuoy, Zap, CheckCircle, Lock, ChevronRight, Settings, FileText, CheckSquare, Square, MessageSquare, Orbit, Loader2, CalendarClock, Download, Share2 } from 'lucide-react';
 import HelpModal from './components/HelpModal';
 import FidgetTool from './components/FidgetTool';
 import ActivityView from './components/ActivityView';
@@ -8,6 +8,7 @@ import SensorySettings from './components/SensorySettings';
 import { audioService } from './services/audioService';
 import { storageService } from './services/storageService';
 import { IS_DEVELOPER_MODE } from './constants';
+import { useInstallPWA } from './hooks/useInstallPWA';
 
 // Default Sensory Profile
 const DEFAULT_PROFILE: SensoryProfile = {
@@ -179,6 +180,8 @@ const ConsentScreen = ({ onAccept }: { onAccept: () => Promise<void> }) => {
 
 const TutorialScreen = ({ onFinish }: { onFinish: () => void }) => {
   const [step, setStep] = useState(1);
+  const { isInstallable, isIOS, isInStandalone, swRegistered, handleInstallClick } = useInstallPWA();
+  const [showInstallInstructions, setShowInstallInstructions] = useState(false);
 
   if (step === 1) {
     return (
@@ -187,9 +190,79 @@ const TutorialScreen = ({ onFinish }: { onFinish: () => void }) => {
         <p className="text-deep-text text-lg max-w-2xl mb-8">
           Para empezar, familiarízate con el entorno de esta <strong>bitácora</strong> diseñada para ayudarte a explorar tu experiencia en el entorno universitario, con herramientas que respetan tu ritmo y necesidades.</p>
           <p className="text-deep-text text-lg max-w-2xl mb-12">Puedes navegar libremente entre las secciones, responder las preguntas que te parezcan relevantes y usar la herramienta de regulación para sentirte más cómodo/a. No hay prisa, todo lo que hagas será confidencial y solo tú decides qué compartir.</p>
-        <button onClick={() => setStep(2)} className="w-full max-w-xs py-3 bg-deep-text text-calm-bg rounded-xl font-bold">
-          Cómo funciona
-        </button>
+
+        <div className="flex flex-col gap-3 max-w-xs w-full">
+
+          {/* Botón de instalación PWA */}
+          {!isInStandalone && swRegistered && (
+            <>
+              {/* Botón automático para Android/Desktop cuando el evento está disponible */}
+              {isInstallable && (
+                <button
+                  onClick={handleInstallClick}
+                  className="flex items-center justify-center w-full gap-2 py-3 text-white bg-calm-blue rounded-xl hover:opacity-90 transition-colors font-medium"
+                >
+                  <Download size={20} />
+                  Instalar esta app
+                </button>
+              )}
+
+              {/* Botón para iOS */}
+              {isIOS && (
+                <>
+                  <button
+                    onClick={() => setShowInstallInstructions(!showInstallInstructions)}
+                    className="flex items-center justify-center w-full gap-2 py-3 text-white bg-calm-blue rounded-xl hover:opacity-90 transition-colors font-medium"
+                  >
+                    <Download size={20} />
+                    Instalar esta app
+                  </button>
+
+                  {/* Instrucciones para iOS */}
+                  {showInstallInstructions && (
+                    <div className="bg-card-bg p-4 rounded-xl border border-soft-gray text-sm text-deep-text space-y-2 animate-slide-up">
+                      <p className="font-medium">Para instalar en iOS:</p>
+                      <ol className="list-decimal list-inside space-y-1 opacity-80">
+                        <li>Toca el botón <Share2 size={14} className="inline" /> (Compartir) en Safari</li>
+                        <li>Selecciona "Añadir a pantalla de inicio"</li>
+                        <li>Confirma tocando "Agregar"</li>
+                      </ol>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Instrucciones manuales para Chrome/Edge si el evento no se disparó */}
+              {!isInstallable && !isIOS && (
+                <>
+                  <button
+                    onClick={() => setShowInstallInstructions(!showInstallInstructions)}
+                    className="flex items-center justify-center w-full gap-2 py-3 text-white bg-calm-blue rounded-xl hover:opacity-90 transition-colors font-medium"
+                  >
+                    <Download size={20} />
+                    Instalar esta app
+                  </button>
+
+                  {showInstallInstructions && (
+                    <div className="bg-card-bg p-4 rounded-xl border border-soft-gray text-sm text-deep-text space-y-2 animate-slide-up">
+                      <p className="font-medium">Para instalar en Chrome/Edge:</p>
+                      <ol className="list-decimal list-inside space-y-1 opacity-80">
+                        <li>Busca el ícono <Download size={14} className="inline" /> en la barra de direcciones</li>
+                        <li>Haz clic en él y selecciona "Instalar"</li>
+                        <li>O ve al menú (⋮) → "Instalar Sonda..."</li>
+                      </ol>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          <button onClick={() => setStep(2)} className="w-full py-3 bg-deep-text text-calm-bg rounded-xl font-bold hover:shadow-lg transition-all">
+            Cómo funciona
+          </button>
+          
+        </div>
       </div>
     );
   }
@@ -464,6 +537,21 @@ const App = () => {
                 </div>
             );
           })}
+        </div>
+
+        {/* Botón de Exportar Datos */}
+        <div className="mt-8 px-6">
+          <button
+            onClick={() => {
+              if (confirm("¿Descargar tus datos en archivo JSON?")) {
+                storageService.exportData();
+              }
+            }}
+            className="w-full flex items-center justify-center gap-3 py-4 bg-green-500 text-white rounded-2xl font-bold shadow-lg hover:bg-green-600 hover:shadow-xl transition-all"
+          >
+            <Download size={20} />
+            Exportar Datos
+          </button>
         </div>
       </div>
     </div>

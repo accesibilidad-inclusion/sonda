@@ -271,7 +271,7 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
           <div className="p-3 mb-2 text-white bg-blue-500 rounded-full">
             <Camera size={24} />
           </div>
-          <span className="text-sm font-medium text-deep-text">Foto/Video</span>
+          <span className="text-sm font-medium text-deep-text">Imagen</span>
         </button>
 
         {/* Dropdown Menu */}
@@ -285,7 +285,7 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
               className="w-full flex items-center p-3 hover:bg-calm-bg transition-colors text-left border-b border-soft-gray"
             >
               {/* <Camera size={20} className="text-blue-500" /> */}
-              <span className="text-sm font-medium text-deep-text">Tomar foto/video</span>
+              <span className="text-sm font-medium text-deep-text">Tomar foto o video</span>
             </button>
             <button
               onClick={() => {

@@ -1,7 +1,6 @@
 import React from 'react';
-import { X, Moon, Sun, Type, Volume2, Activity as ActivityIcon, EyeOff, Download, Trash2, Database, Send, Settings } from 'lucide-react';
+import { X, Type, Volume2, Activity as ActivityIcon, Settings } from 'lucide-react';
 import { SensoryProfile, ThemeType, FontSizeType, SoundType } from '../types';
-import { storageService } from '../services/storageService';
 
 interface SensorySettingsProps {
   isOpen: boolean;
@@ -15,24 +14,6 @@ const SensorySettings: React.FC<SensorySettingsProps> = ({ isOpen, onClose, sett
 
   const update = (key: keyof SensoryProfile, value: any) => {
     onUpdate({ ...settings, [key]: value });
-  };
-
-  const handleExport = () => {
-    if (confirm("¿Descargar tus datos en archivo JSON?")) {
-        storageService.exportData();
-    }
-  };
-
-  const handleSend = () => {
-      if (confirm("Se descargará tu archivo de datos y se abrirá tu correo. Por favor, recuerda adjuntar el archivo descargado al email.")) {
-          storageService.prepareEmailData();
-      }
-  };
-
-  const handleClear = () => {
-    if (confirm("¿Estás seguro? Esto borrará todo tu progreso de este dispositivo.")) {
-        storageService.clearAllData();
-    }
   };
 
   return (
@@ -184,39 +165,6 @@ const SensorySettings: React.FC<SensorySettingsProps> = ({ isOpen, onClose, sett
                   }`} />
                 </button>
               </div>
-          </section>
-
-          {/* Data Management Section */}
-          <section>
-             <h3 className="text-sm font-bold text-deep-text opacity-40 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Database size={16} /> Gestión de Datos y Envíos
-            </h3>
-            <div className="flex flex-col gap-3">
-                <button 
-                    onClick={handleSend}
-                    className="flex items-center justify-center gap-2 p-3 bg-green-50 text-green-700 rounded-xl font-medium hover:bg-green-100 transition-colors border border-green-100"
-                >
-                    <Send size={18} />
-                    Enviar mi bitácora
-                </button>
-
-                <div className="grid grid-cols-2 gap-3">
-                    <button 
-                        onClick={handleExport}
-                        className="flex items-center justify-center gap-2 p-3 bg-blue-50 text-blue-700 rounded-xl font-medium hover:bg-blue-100 transition-colors border border-blue-100 text-xs"
-                    >
-                        <Download size={16} />
-                        Solo Descargar
-                    </button>
-                    <button 
-                        onClick={handleClear}
-                        className="flex items-center justify-center gap-2 p-3 bg-red-50 text-red-700 rounded-xl font-medium hover:bg-red-100 transition-colors border border-red-100 text-xs"
-                    >
-                        <Trash2 size={16} />
-                        Borrar todo
-                    </button>
-                </div>
-            </div>
           </section>
 
         </div>

@@ -104,7 +104,7 @@ export const WEEKLY_CONTENT: WeekModule[] = [
 
 export const HELP_CONTENT = {
   title: "¿Necesitas apoyo?",
-  body: "Si tienes dudas, ansiedad o quieres retirarte del estudio, contáctanos. Investigadora Responsable: Vanessa Vega (Fondecyt).",
+  body: "Si tienes dudas, ansiedad o quieres retirarte del estudio, contáctanos.",
   whatsapp: "+56961407000",
   email: "vanessa.vega@pucv.cl",
   subject: "Envío de Sonda - Proyecto FONDECYT 1251541"

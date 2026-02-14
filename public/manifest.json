@@ -14,6 +14,18 @@
       "sizes": "222x222",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "favicon.png",
+      "sizes": "222x222",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "favicon.png",
+      "sizes": "222x222",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

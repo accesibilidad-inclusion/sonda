@@ -194,6 +194,7 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
               density: 0.001,
               friction: 0.8,
               restitution: 0.3,
+              angle: - Math.PI / 6,
               collisionFilter: {
                 category: otherCategory,
                 mask: rockCategory | otherCategory
@@ -384,7 +385,7 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
               restitution: 0.8,
               collisionFilter: {
                 category: rockCategory,
-                mask: otherCategory
+                mask: rockCategory | otherCategory
               },
               render: {
                 fillStyle: '#FFFFFF'
@@ -402,12 +403,12 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
             shotCount.current++;
             if (IS_DEVELOPER_MODE) console.log(`[FidgetTool] Shot #${shotCount.current} with force (${forceX}, ${forceY})`);
 
-            // Remove rock after 5 seconds to prevent clutter
+            // Remove ball after 15 seconds to prevent clutter
             setTimeout(() => {
               if (engineRef.current) {
                 World.remove(engineRef.current.world, rock);
               }
-            }, 5000);
+            }, 15000);
           }
 
           slingshotState.current = null;
