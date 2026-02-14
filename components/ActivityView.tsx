@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { ArrowLeft, Camera, Mic, Type, SkipForward, HelpCircle, MessageSquare, Trash2, Pencil, Video, PlayCircle } from 'lucide-react';
 import { Activity, ResponseMode, ResponseItem } from '../types';
 import { IS_DEVELOPER_MODE } from '../constants';
+import { compressImage, compressVideo, getAudioConstraints, getAudioRecorderOptions } from '../services/mediaCompression';
 
 interface ActivityViewProps {
   activity: Activity;
@@ -99,25 +100,32 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
     onUpdate(activity.id, [...activity.responses, newResponse]);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const isVideo = file.type.startsWith('video/');
       const responseType = isVideo ? ResponseMode.VIDEO : ResponseMode.PHOTO;
 
-      // Limit file size to 3MB for Base64 storage to prevent LocalStorage crash
-      if (file.size > 3 * 1024 * 1024) {
-          alert("El archivo es demasiado grande para guardarse localmente. Guardaremos solo el nombre.");
-          addResponse(`[Archivo Grande] ${file.name}`, responseType);
-      } else {
-          // Convert to Base64 for viewing
-          const reader = new FileReader();
-          reader.onloadend = () => {
-              if (reader.result) {
-                  addResponse(reader.result as string, responseType);
-              }
-          };
-          reader.readAsDataURL(file);
+      try {
+        setIsSubmitting(true);
+
+        if (isVideo) {
+          // Compress video (creates thumbnail for now)
+          const compressedVideo = await compressVideo(file);
+          await addResponse(compressedVideo, responseType);
+        } else {
+          // Compress image
+          const compressedImage = await compressImage(file);
+          await addResponse(compressedImage, responseType);
+        }
+      } catch (error) {
+        console.error('[ActivityView] Compression error:', error);
+        if (error instanceof Error) {
+          alert(error.message);
+        } else {
+          alert('Error al procesar el archivo. Por favor intenta con un archivo más pequeño.');
+        }
+        setIsSubmitting(false);
       }
     }
   };
@@ -142,24 +150,18 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
 
     try {
       if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Requesting microphone access...');
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Use optimized audio constraints (mono, 16kHz, noise suppression)
+      const audioConstraints = getAudioConstraints();
+      const stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
       if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Microphone access granted', stream);
 
-      // Determine supported mime type
-      let mimeType = 'audio/webm';
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-          mimeType = 'audio/webm;codecs=opus';
-      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-          mimeType = 'audio/mp4'; // Safari support
-      } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
-          mimeType = 'audio/ogg;codecs=opus';
-      } else if (MediaRecorder.isTypeSupported('audio/wav')) {
-          mimeType = 'audio/wav';
-      }
+      // Get optimized recorder options (Opus codec, 32kbps)
+      const recorderOptions = getAudioRecorderOptions();
+      const mimeType = recorderOptions.mimeType; // Save for later use in blob creation
+      if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Using MIME type: ${mimeType}, Bitrate: ${recorderOptions.audioBitsPerSecond}bps`);
 
-      if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Using MIME type: ${mimeType}`);
-
-      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      const mediaRecorder = new MediaRecorder(stream, recorderOptions);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -510,7 +512,7 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
       <div className="flex-1 p-6 max-w-lg mx-auto w-full pb-24">
         <h1 className="text-2xl font-bold text-deep-text mb-4 leading-tight">{activity.title}</h1>
         
-        <div className="bg-card-bg p-6 rounded-2xl shadow-sm border border-soft-gray mb-6">
+        <div className="bg-card-bg p-6 rounded-2xl shadow-sm border-2 border-soft-gray mb-6">
           <p className="text-lg text-deep-text leading-relaxed mb-4">{activity.description}</p>
           
           {activity.scaffoldExample && (
