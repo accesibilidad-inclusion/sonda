@@ -125,7 +125,7 @@ Al exportar los datos desde el menú "Preferencias", se genera un archivo JSON c
 }
 ```
 
-## 🚀 Instalación y Ejecución
+## Instalación y Ejecución
 
 1.  **Instalar dependencias:**
     ```bash
