@@ -1,0 +1,152 @@
+-- allium: 3
+-- wellbeing.allium
+
+use "./participant.allium" as participant
+
+-- Scope: Wellbeing and sensory support tools
+-- Includes: FidgetSession (interactive stress-relief tool), PWA installation guidance
+-- Excludes:
+--   - Sensory profile preferences (stored on Participant; managed in participant.allium)
+--   - Research content (see research.allium)
+--   - Data export (see data-sovereignty.allium)
+-- Dependencies: Participant defined in participant.allium
+
+-- The fidget tool is a non-research feature. It provides a physics-based interactive
+-- toy for sensory regulation and focus. Sessions are logged and included in the
+-- data export so researchers can understand usage patterns over the study period.
+-- The tool is always accessible and never gated by study progression.
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity FidgetSession {
+    participant: participant/Participant
+    status: active | ended
+    started_at: Timestamp
+    shots: Integer
+    drags: Integer
+
+    transitions status {
+        active -> ended
+        terminal: ended
+    }
+
+    ended_at: Timestamp when status = ended
+    duration: ended_at - started_at when status = ended
+
+    invariant NonNegativeCounts {
+        shots >= 0 and drags >= 0
+    }
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- Session lifecycle
+
+rule FidgetSessionStarted {
+    when: ParticipantOpensFidgetTool(p)
+    requires: p.status = active
+    ensures:
+        FidgetSession.created(
+            participant: p,
+            status: active,
+            started_at: now,
+            shots: 0,
+            drags: 0
+        )
+
+    @guidance
+        -- Only one fidget session per participant can be active at a time.
+        -- (Enforced by the single-screen UI; the fidget tool occupies the
+        -- full viewport while open.)
+}
+
+rule FidgetSessionEnded {
+    when: ParticipantClosesFidgetTool(session, final_shots, final_drags)
+    requires: session.status = active
+    ensures:
+        session.status = ended
+        session.ended_at = now
+        session.shots = final_shots
+        session.drags = final_drags
+
+    @guidance
+        -- shots counts ball-release events with a drag distance above a minimum
+        -- threshold (distinguishing intentional launches from brief touches).
+        -- drags counts body-grab events (the player picking up a physics object).
+        -- Both are accumulated in memory during the session and committed atomically
+        -- on close, so no partial session data is persisted.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant ActiveSessionBelongsToActiveParticipant {
+    for s in FidgetSessions:
+        s.status = active implies s.participant.status = active
+}
+
+invariant EndedSessionHasDuration {
+    for s in FidgetSessions:
+        s.status = ended implies s.ended_at >= s.started_at
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor ActiveParticipant {
+    identified_by: participant/Participant where status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface FidgetToolView {
+    facing player: ActiveParticipant
+
+    exposes:
+        player.sensory_profile.reduced_motion
+        player.sensory_profile.theme
+
+    provides:
+        ParticipantOpensFidgetTool(player)
+        ParticipantClosesFidgetTool(session, final_shots, final_drags)
+            when session in FidgetSessions where participant = player and status = active
+
+    @guarantee AlwaysAccessible
+        -- The fidget tool is available at any point during the active study,
+        -- regardless of research progress or which modules are unlocked.
+        -- It does not gate on, or affect, research progression.
+    @guidance
+        -- The tool uses a physics simulation with interactive objects (blocks and a
+        -- projectile ball). Visual complexity and animation intensity should respect
+        -- the participant's reduced_motion and theme sensory preferences.
+        -- The tower of blocks regenerates automatically when all blocks have fallen,
+        -- allowing indefinite play without interaction.
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred PWAInstallation.prompt
+    -- The PWA installation prompt is offered during the tutorial phase and
+    -- optionally from the help panel. On iOS, it requires manual steps via
+    -- the browser share menu. On Android/Chrome, a browser-native install
+    -- prompt is triggered by the beforeinstallprompt event.
+    -- Installation is never required and does not affect study participation.
+    -- see: https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Should fidget sessions be logged when the app is in standalone (installed PWA) mode versus browser mode? Is the distinction meaningful for the research?"
+open question "Is the fidget tool intended as purely optional wellbeing support, or should its usage patterns be interpreted as research data about self-regulation behaviour?"
+open question "Should there be a maximum session duration after which the tool auto-closes and the session is recorded?"

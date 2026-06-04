@@ -1,0 +1,228 @@
+-- allium: 3
+-- data-sovereignty.allium
+
+use "./participant.allium" as participant
+use "./research.allium" as research
+use "./wellbeing.allium" as wellbeing
+
+-- Scope: Participant data protection, explicit export flow, and safe deletion
+-- Includes: Export flow, deletion confirmation gates, clear-all-data
+-- Excludes:
+--   - Participant consent and identity (see participant.allium)
+--   - Research content and responses (see research.allium)
+--   - Wellbeing tools (see wellbeing.allium)
+-- Dependencies: Participant, ConsentRecord from participant.allium
+--               WeekModule, Activity, Response from research.allium
+--               FidgetSession from wellbeing.allium
+
+-- Core principle: The participant's data belongs to the participant.
+-- No data leaves the device without a deliberate, confirmed participant action.
+-- There is no background synchronisation, analytics, or telemetry.
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract DataSovereignty {
+    @invariant NoSilentTransmission
+        -- All data transmission requires an explicit, confirmed participant action.
+        -- The system never initiates outbound network connections carrying
+        -- participant data. No analytics, no telemetry, no passive sync.
+
+    @invariant LocalStorageOnly
+        -- All participant data (responses, consent record, sensory profile,
+        -- fidget sessions) is stored exclusively on the participant's device.
+        -- The system has no server-side storage component.
+
+    @invariant ExportAlwaysConfirmed
+        -- A data export is never initiated without a preceding explicit
+        -- confirmation from the participant in the same session.
+
+    @invariant DeletionAlwaysConfirmed
+        -- No response, module record, or participant data is deleted without
+        -- a preceding explicit confirmation from the participant.
+
+    @invariant IrreversibilityMadeExplicit
+        -- The clear-all-data action presents a clear, plain-language warning
+        -- that the operation cannot be undone before asking for confirmation.
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- Data export flow (two-step: request → confirm → export)
+
+rule DataExportRequested {
+    when: ParticipantRequestsExport(p)
+    requires: p.status = active
+    ensures: ExportConfirmationPending(p)
+}
+
+rule DataExportConfirmed {
+    when: ParticipantConfirmsExport(p)
+    ensures:
+        DataFileDownloaded(participant: p, filename: export_filename(p), contents: export_payload(p))
+        EmailClientOpened(recipient: participant/config.researcher_email, subject: export_email_subject(p))
+
+    @guidance
+        -- The export produces a JSON file downloaded to the device. Separately,
+        -- the device email client is opened with the researcher's address and
+        -- study subject pre-filled. The participant must manually attach the
+        -- downloaded file. This two-step design (download then manual attach)
+        -- ensures the participant is aware that data is being sent.
+        --
+        -- The exported payload includes:
+        --   progress (all week modules, activities, responses with content),
+        --   sensory_profile,
+        --   fidget session logs (started_at, duration, shots, drags),
+        --   consent timestamp,
+        --   device metadata (user agent, screen dimensions),
+        --   export timestamp.
+}
+
+rule DataExportCancelled {
+    when: ParticipantCancelsExport(p)
+    ensures: ExportConfirmationPending(p)
+
+    @guidance
+        -- No file is downloaded and no email client is opened. The app returns
+        -- to the state before the export was requested.
+}
+
+-- Response deletion (two-step: request → confirm → delete)
+
+rule ResponseDeletionRequested {
+    when: ParticipantRequestsDeleteResponse(response)
+    ensures: ResponseDeletionPending(response)
+}
+
+rule ResponseDeletionConfirmed {
+    when: ParticipantConfirmsDeleteResponse(response)
+    ensures: not exists response
+}
+
+rule ResponseDeletionCancelled {
+    when: ParticipantCancelsDeleteResponse(response)
+    ensures: ResponseDeletionPending(response)
+
+    @guidance
+        -- The response is preserved. No data is changed.
+}
+
+-- Clear all data (two-step: request → confirm → full wipe)
+
+rule ClearAllDataRequested {
+    when: ParticipantRequestsClearAllData(p)
+    ensures: ClearAllDataConfirmationPending(p)
+}
+
+rule ClearAllDataConfirmed {
+    when: ParticipantConfirmsClearAllData(p)
+    ensures:
+        for response in research/Responses where response.activity.module.participant = p:
+            not exists response
+        for activity in research/Activities where activity.module.participant = p:
+            not exists activity
+        for module in research/WeekModules where module.participant = p:
+            not exists module
+        for session in wellbeing/FidgetSessions where session.participant = p:
+            not exists session
+        not exists p.consent
+        not exists p
+
+    @guidance
+        -- After clearing, the application resets completely. On next launch,
+        -- ParticipantInitialized fires as if it were a first-time user.
+        -- This action is irreversible; there is no recovery path.
+        -- The confirmation step must use plain language and avoid euphemisms.
+}
+
+rule ClearAllDataCancelled {
+    when: ParticipantCancelsClearAllData(p)
+    ensures: ClearAllDataConfirmationPending(p)
+
+    @guidance
+        -- All data is preserved. The app returns to its previous state.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant ExportRequiresConsentedParticipant {
+    for p in participant/Participants:
+        p.status = active implies p.has_consented
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor DataOwner {
+    identified_by: participant/Participant where status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface DataManagementPanel {
+    facing owner: DataOwner
+
+    provides:
+        ParticipantRequestsExport(owner)
+        ParticipantConfirmsExport(owner)
+        ParticipantCancelsExport(owner)
+        ParticipantRequestsClearAllData(owner)
+        ParticipantConfirmsClearAllData(owner)
+        ParticipantCancelsClearAllData(owner)
+
+    contracts:
+        fulfils DataSovereignty
+
+    @guarantee ExportIsExplicit
+        -- The participant initiates every export. The app never exports automatically
+        -- in the background, on a schedule, or triggered by any system event.
+    @guarantee ClearIsIrreversible
+        -- The confirmation dialog for clear-all-data uses unambiguous language
+        -- and does not offer a default-confirm interaction (e.g., auto-dismiss timer).
+    @guidance
+        -- The export button and clear-all-data option should be visually distinct
+        -- to prevent accidental triggering. Consider requiring additional friction
+        -- (e.g., typed confirmation) for clear-all-data.
+}
+
+surface ResponseDeletionConfirmation {
+    facing owner: DataOwner
+    context response: research/Response where response.activity.module.participant = owner
+
+    exposes:
+        response.mode
+        response.captured_at
+
+    provides:
+        ParticipantConfirmsDeleteResponse(response)
+        ParticipantCancelsDeleteResponse(response)
+
+    @guarantee DeletionIsExplicit
+        -- The confirmation surface shows what is about to be deleted (response mode
+        -- and capture date) so the participant can make an informed decision.
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred export_filename        -- black box: produces a date-stamped filename string
+deferred export_payload         -- black box: serialises all participant data to JSON
+deferred export_email_subject   -- black box: produces the pre-filled email subject line
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Should the app prevent the operating system from backing up response data to cloud services (iCloud, Google Drive)? If so, how is this communicated to the participant and enforced technically?"
+open question "Should a log of past export timestamps be maintained, so the participant can confirm they have successfully sent data to the researcher?"
+open question "Is there a mechanism for the researcher to verify that exported data has not been altered after export?"
+open question "Should the export include the participant's SensoryProfile change history (if tracked) or only the current profile?"

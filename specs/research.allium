@@ -1,0 +1,393 @@
+-- allium: 3
+-- research.allium
+
+use "./participant.allium" as participant
+
+-- Scope: Research content, weekly progression, activity responses, storage management
+-- Includes: WeekModule, Activity, Response, unlocking schedule, study completion,
+--           storage budget enforcement and transparency
+-- Excludes:
+--   - Participant consent and identity (see participant.allium)
+--   - Data export (see data-sovereignty.allium)
+--   - Wellbeing tools (see wellbeing.allium)
+-- Dependencies: Participant, ConsentRecord defined in participant.allium
+
+------------------------------------------------------------
+-- Value Types
+------------------------------------------------------------
+
+value StorageStatus {
+    used_bytes: Integer
+    budget_bytes: Integer
+    available_bytes: budget_bytes - used_bytes
+    usage_fraction: used_bytes / budget_bytes
+}
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract StorageSafety {
+    @invariant BudgetRespected
+        -- Total stored participant data never exceeds the configured storage budget.
+        -- A response is rejected before creation if its estimated size would cause
+        -- the budget to be exceeded. Rejection is surfaced as a clear explanation,
+        -- not a silent failure.
+    @invariant MediaSizeBounded
+        -- Media responses (audio, photo, video) are reduced to bounded sizes
+        -- before their size is assessed against the storage budget.
+        -- The participant's raw captured media is not stored verbatim.
+    @invariant StorageTransparent
+        -- The participant's current storage usage and remaining available space
+        -- are always visible during response entry, enabling informed decisions
+        -- about whether to capture media.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum ResponseMode { text | audio | photo | video | skipped }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity WeekModule {
+    participant: participant/Participant
+    id: Integer
+    title: String
+    goal: String
+    status: locked | available | completed
+
+    transitions status {
+        locked -> available
+        available -> completed
+        terminal: completed
+    }
+
+    unlocked_at: Timestamp when status = available | completed
+
+    -- Relationships
+    activities: Activity with module = this
+
+    -- Derived
+    completed_activities: activities where is_completed = true
+    all_activities_done: completed_activities.count = activities.count
+    unlock_due_at: participant.consent?.accepted_at + (id - 1) * config.week_unlock_interval
+
+    invariant ValidId {
+        id >= 1 and id <= config.study_length_weeks
+    }
+}
+
+entity Activity {
+    module: WeekModule
+    id: String
+    title: String
+    description: String
+    example: String?
+
+    -- Relationships
+    responses: Response with activity = this
+
+    -- Derived
+    substantive_responses: responses where mode != skipped
+    is_completed: substantive_responses.count > 0
+}
+
+entity Response {
+    activity: Activity
+    mode: ResponseMode
+    content: String?
+    captured_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    week_unlock_interval: Duration = 7.days
+    study_length_weeks: Integer = 4
+    activities_per_week: Integer = 2
+    developer_mode: Boolean = false
+    storage_budget_bytes: Integer = 4_500_000
+    storage_warning_threshold: Decimal = 0.8
+    min_response_size_bytes: Integer = 50_000
+}
+
+-- storage_budget_bytes: conservative cap of 4.5 MB. Safari on iOS enforces a
+-- 5 MB localStorage limit per origin; the remaining 0.5 MB covers structural data
+-- (progress schema, sensory profile, fidget session logs). Other browsers are
+-- more permissive, but Safari is the binding constraint for the iOS audience.
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- Study content initialisation (fires when a Participant is first created)
+
+rule StudyContentInitialized {
+    when: p: participant/Participant.created
+    ensures:
+        let m1 = WeekModule.created(participant: p, id: 1, status: locked, title: study_module_title(1), goal: study_module_goal(1))
+        let m2 = WeekModule.created(participant: p, id: 2, status: locked, title: study_module_title(2), goal: study_module_goal(2))
+        let m3 = WeekModule.created(participant: p, id: 3, status: locked, title: study_module_title(3), goal: study_module_goal(3))
+        let m4 = WeekModule.created(participant: p, id: 4, status: locked, title: study_module_title(4), goal: study_module_goal(4))
+        Activity.created(module: m1, id: "1.1", title: study_activity_title("1.1"), description: study_activity_description("1.1"), example: study_activity_example("1.1"))
+        Activity.created(module: m1, id: "1.2", title: study_activity_title("1.2"), description: study_activity_description("1.2"), example: study_activity_example("1.2"))
+        Activity.created(module: m2, id: "2.1", title: study_activity_title("2.1"), description: study_activity_description("2.1"), example: study_activity_example("2.1"))
+        Activity.created(module: m2, id: "2.2", title: study_activity_title("2.2"), description: study_activity_description("2.2"), example: study_activity_example("2.2"))
+        Activity.created(module: m3, id: "3.1", title: study_activity_title("3.1"), description: study_activity_description("3.1"), example: study_activity_example("3.1"))
+        Activity.created(module: m3, id: "3.2", title: study_activity_title("3.2"), description: study_activity_description("3.2"), example: study_activity_example("3.2"))
+        Activity.created(module: m4, id: "4.1", title: study_activity_title("4.1"), description: study_activity_description("4.1"), example: study_activity_example("4.1"))
+        Activity.created(module: m4, id: "4.2", title: study_activity_title("4.2"), description: study_activity_description("4.2"), example: study_activity_example("4.2"))
+
+    @guidance
+        -- Titles, goals, descriptions, and examples are resolved from static study
+        -- configuration (not participant-generated). They are fixed at study design
+        -- time. The black box functions study_module_title, study_activity_title, etc.
+        -- represent lookups into that configuration.
+}
+
+-- Week unlocking — production schedule (time-based, relative to consent date)
+
+rule WeekModuleUnlocks {
+    when: module: WeekModule.unlock_due_at <= now
+    requires: module.status = locked
+    requires: not config.developer_mode
+    ensures:
+        module.status = available
+        module.unlocked_at = now
+
+    @guidance
+        -- Week 1: unlocks immediately after consent (offset = 0 days).
+        -- Week 2: unlocks 7 days after consent.
+        -- Week 3: unlocks 14 days after consent.
+        -- Week 4: unlocks 21 days after consent.
+        -- unlock_due_at is null before consent exists, so this rule does not
+        -- fire before the participant has accepted consent.
+}
+
+-- Week unlocking — developer mode (all weeks immediately available on consent)
+
+rule AllWeeksUnlockedForDeveloper {
+    when: consent: participant/ConsentRecord.created
+    requires: config.developer_mode
+    ensures:
+        for module in WeekModules where participant = consent.participant:
+            module.status = available
+            module.unlocked_at = now
+}
+
+-- Activity and module completion
+
+rule WeekModuleCompleted {
+    when: activity: Activity.is_completed
+    let module = activity.module
+    requires: module.status = available
+    requires: module.all_activities_done
+    ensures: module.status = completed
+}
+
+rule StudyCompleted {
+    when: module: WeekModule.status transitions_to completed
+    let p = module.participant
+    let all_weeks = WeekModules where participant = p
+    requires: p.status = active
+    requires: all_weeks.all(w => w.status = completed)
+    ensures: p.status = completed
+}
+
+-- Response collection
+
+rule ResponseAdded {
+    when: ParticipantAddsResponse(activity, mode, content)
+    let storage = storage_status(activity.module.participant)
+    requires: activity.module.status = available
+    requires: estimated_size(content) <= storage.available_bytes
+    ensures:
+        Response.created(
+            activity: activity,
+            mode: mode,
+            content: content,
+            captured_at: now
+        )
+        if storage.usage_fraction >= config.storage_warning_threshold:
+            StorageNearingLimit(activity.module.participant, storage)
+
+    @guidance
+        -- content for media responses is the compressed representation —
+        -- audio at 16 kHz mono Opus, images resized to at most 1000 px at 80 %
+        -- JPEG quality, video at at most 720 p with a 30-second cap.
+        -- Compression is applied before this trigger is invoked, so
+        -- estimated_size(content) reflects the actual storage cost.
+        -- content is null for skipped responses.
+        -- Multiple responses per activity are supported.
+        -- If the requires clause fails (content does not fit), the participant
+        -- is shown a clear explanation and directed to export or remove older
+        -- responses to free space. The response is not silently discarded.
+}
+
+rule TextResponseEdited {
+    when: ParticipantEditsTextResponse(response, new_content)
+    requires: response.mode = text
+    ensures: response.content = new_content
+}
+
+rule ResponseRemoved {
+    when: ParticipantConfirmsDeleteResponse(response)
+    ensures: not exists response
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant ResponsesRequireConsent {
+    for r in Responses:
+        r.activity.module.participant.has_consented
+}
+
+invariant AudioRequiresMicrophone {
+    for r in Responses:
+        r.mode = audio implies r.activity.module.participant.microphone_granted
+}
+
+invariant PhotoOrVideoRequiresCamera {
+    for r in Responses:
+        r.mode in {photo, video} implies r.activity.module.participant.camera_granted
+}
+
+invariant LockedModulesHaveNoResponses {
+    for m in WeekModules:
+        m.status = locked implies m.activities.all(a => a.responses.count = 0)
+}
+
+invariant CompletedActivityHasSubstantiveResponse {
+    for a in Activities:
+        a.is_completed implies a.substantive_responses.count > 0
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor StudyParticipant {
+    identified_by: participant/Participant where status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface StudyDashboard {
+    facing viewer: StudyParticipant
+
+    let weeks = WeekModules where participant = viewer
+    let storage = storage_status(viewer)
+
+    exposes:
+        for module in weeks:
+            module.id
+            module.title
+            module.status
+            module.unlocked_at
+            module.unlock_due_at
+            module.completed_activities.count
+            module.activities.count
+        storage.used_bytes
+        storage.budget_bytes
+        storage.available_bytes
+        storage.usage_fraction
+
+    related:
+        for module in weeks where module.status = available:
+            for activity in module.activities:
+                ActivityView(activity)
+
+    @guidance
+        -- Locked modules display the expected unlock date (unlock_due_at) so the
+        -- participant knows when new content becomes available, reducing anxiety
+        -- about a seemingly "broken" or incomplete app.
+        -- Completed modules remain visible but read-only.
+        -- A storage indicator at the dashboard level gives the participant a global
+        -- view of how much space their data occupies. This is especially relevant
+        -- after adding photo or video responses.
+}
+
+surface ActivityView {
+    facing viewer: StudyParticipant
+    context activity: Activity where activity.module.participant = viewer
+
+    let storage = storage_status(viewer)
+
+    exposes:
+        activity.title
+        activity.description
+        activity.example
+        activity.is_completed
+        activity.responses
+        viewer.camera_granted
+        viewer.microphone_granted
+        storage.used_bytes
+        storage.budget_bytes
+        storage.available_bytes
+        storage.usage_fraction
+
+    provides:
+        ParticipantAddsResponse(activity, mode, content)
+            when activity.module.status = available
+            and storage.available_bytes >= config.min_response_size_bytes
+        ParticipantEditsTextResponse(response, new_content)
+            when response in activity.responses and response.mode = text
+        ParticipantConfirmsDeleteResponse(response)
+            when response in activity.responses
+
+    contracts:
+        fulfils StorageSafety
+
+    @guarantee ResponseModesReflectPermissions
+        -- Only response modes whose required permissions have been granted are
+        -- offered. Unavailable modes are explained with the reason, so the
+        -- participant understands they can still grant the permission later
+        -- (if the device allows it) or use an alternative mode.
+    @guarantee StorageVisibleDuringCapture
+        -- The participant can always see their current storage usage (used and
+        -- available bytes, or a visual equivalent) while in the activity view,
+        -- both before initiating a response and after each response is added.
+    @guidance
+        -- When storage.available_bytes < config.min_response_size_bytes, all
+        -- response modes are disabled. The participant is shown a plain-language
+        -- explanation and directed to the data export flow (to send data and then
+        -- potentially clear space) rather than leaving them with a broken UI.
+        -- When storage.usage_fraction >= config.storage_warning_threshold, a
+        -- non-blocking warning is shown alongside the response options.
+        -- The example (scaffold) field, when present, provides a concrete sample
+        -- response to reduce ambiguity about what is being asked. It is shown
+        -- alongside the question description, never as a replacement.
+        -- Deleting a response requires an explicit confirmation step (see data-sovereignty.allium).
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred study_module_title          -- black box: looks up module title by week id
+deferred study_module_goal           -- black box: looks up module goal by week id
+deferred study_activity_title        -- black box: looks up activity title by activity id
+deferred study_activity_description  -- black box: looks up activity description by activity id
+deferred study_activity_example      -- black box: looks up optional scaffold example by activity id
+deferred storage_status              -- black box: returns StorageStatus for a participant (measures all persisted data)
+deferred estimated_size              -- black box: returns byte count of a response content value
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Should responses in a completed module remain editable, or become read-only once the module transitions to completed?"
+open question "Is there a maximum response count per activity, or is the collection unbounded?"
+open question "Is 0.8 (80 %) the right warning threshold for storage, or should it be adjusted based on participant feedback? A very storage-conscious participant might want to be warned earlier."
+open question "When storage is exhausted, should the app proactively prompt the participant to export and clear data, or only display a passive explanation?"
+open question "Should the participant be able to re-lock a module (e.g., to redo it)? Currently the model treats completion as terminal."

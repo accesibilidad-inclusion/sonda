@@ -1,0 +1,320 @@
+-- allium: 3
+-- participant.allium
+
+-- Scope: Participant identity, informed consent, permission grants, and sensory preferences
+-- Includes: Participant, ConsentRecord, PermissionGrant, SensoryProfile, onboarding flow
+-- Excludes:
+--   - Research content and weekly progression (see research.allium)
+--   - Data export and protection (see data-sovereignty.allium)
+--   - Wellbeing tools and fidget sessions (see wellbeing.allium)
+
+------------------------------------------------------------
+-- Value Types
+------------------------------------------------------------
+
+value SensoryProfile {
+    theme: calm | warm | high_contrast
+    font_size: normal | large | extra_large
+    dyslexia_font: Boolean
+    reduced_motion: Boolean
+    background_noise: off | white | pink | brown
+    noise_volume: Decimal
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum PermissionKind { camera | microphone }
+enum PermissionStatus { not_requested | granted | denied }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity Participant {
+    status: unstarted | consenting | tutorial | active | completed
+
+    transitions status {
+        unstarted -> consenting
+        consenting -> tutorial
+        tutorial -> active
+        active -> completed
+        terminal: completed
+    }
+
+    sensory_profile: SensoryProfile
+
+    -- Relationships
+    consent: ConsentRecord with participant = this
+    permissions: PermissionGrant with participant = this
+
+    -- Derived
+    has_consented: consent != null
+    camera_granted: permissions.any(p => p.kind = camera and p.status = granted)
+    microphone_granted: permissions.any(p => p.kind = microphone and p.status = granted)
+
+    invariant ValidNoiseVolume {
+        sensory_profile.noise_volume >= 0.0 and sensory_profile.noise_volume <= 1.0
+    }
+}
+
+entity ConsentRecord {
+    participant: Participant
+    accepted_at: Timestamp
+}
+
+entity PermissionGrant {
+    participant: Participant
+    kind: PermissionKind
+    status: PermissionStatus
+    requested_at: Timestamp
+    resolved_at: Timestamp when status = granted | denied
+
+    transitions status {
+        not_requested -> granted
+        not_requested -> denied
+        terminal: granted, denied
+    }
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    support_whatsapp: String
+    support_email: String
+    researcher_email: String
+    project_id: String
+    pwa_base_url: String
+}
+
+-- pwa_base_url: the canonical origin at which the app is published, used by the
+-- PWA manifest (start_url, scope) and service worker registration.
+-- Production value: "https://accesibilidad-inclusion.github.io/sonda"
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- Initialization
+
+rule ParticipantInitialized {
+    when: AppLaunched
+    requires: not exists Participant
+    ensures:
+        Participant.created(
+            status: unstarted,
+            sensory_profile: {
+                theme: calm,
+                font_size: normal,
+                dyslexia_font: false,
+                reduced_motion: false,
+                background_noise: off,
+                noise_volume: 0.5
+            }
+        )
+
+    @guidance
+        -- This rule fires only on the very first launch. On subsequent launches,
+        -- the existing Participant is restored from persistent storage, preserving
+        -- all progress and preferences without re-running onboarding.
+}
+
+-- Onboarding
+
+rule ParticipantAdvancesToConsent {
+    when: ParticipantProceedsFromWelcome(participant)
+    requires: participant.status = unstarted
+    ensures: participant.status = consenting
+}
+
+rule ParticipantAcceptsConsent {
+    when: ParticipantAcceptsInformedConsent(participant)
+    requires: participant.status = consenting
+    ensures:
+        participant.status = tutorial
+        ConsentRecord.created(participant: participant, accepted_at: now)
+        PermissionsRequested(participant)
+}
+
+-- Permissions (requested as a chained consequence of consent acceptance)
+
+rule CameraAndMicrophoneRequested {
+    when: PermissionsRequested(participant)
+    ensures:
+        PermissionGrant.created(
+            participant: participant,
+            kind: camera,
+            status: not_requested,
+            requested_at: now
+        )
+        PermissionGrant.created(
+            participant: participant,
+            kind: microphone,
+            status: not_requested,
+            requested_at: now
+        )
+
+    @guidance
+        -- Both permission requests are triggered immediately after consent.
+        -- The tutorial screen explains the purpose of each permission before
+        -- the device's native permission prompt appears.
+}
+
+rule PermissionGranted {
+    when: ParticipantGrantsPermission(participant, kind)
+    let grant = PermissionGrant{participant, kind}
+    requires: exists grant
+    requires: grant.status = not_requested
+    ensures:
+        grant.status = granted
+        grant.resolved_at = now
+}
+
+rule PermissionDenied {
+    when: ParticipantDeniesPermission(participant, kind)
+    let grant = PermissionGrant{participant, kind}
+    requires: exists grant
+    requires: grant.status = not_requested
+    ensures:
+        grant.status = denied
+        grant.resolved_at = now
+
+    @guidance
+        -- A denied permission restricts available response modes (audio requires
+        -- microphone; photo and video require camera) but does not block participation.
+        -- Unavailable modes are explained rather than silently hidden.
+}
+
+-- Tutorial completion
+
+rule ParticipantCompletesTutorial {
+    when: ParticipantFinishesTutorial(participant)
+    requires: participant.status = tutorial
+    ensures: participant.status = active
+}
+
+-- Sensory preferences (adjustable at any time during the active study)
+
+rule SensoryProfileUpdated {
+    when: ParticipantUpdatesSensoryProfile(participant, new_profile)
+    requires: participant.status in {tutorial, active}
+    ensures: participant.sensory_profile = new_profile
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant AtMostOneParticipant {
+    for a in Participants:
+        for b in Participants:
+            a = b
+}
+
+invariant ConsentPrecedesStudy {
+    for p in Participants:
+        p.status in {active, completed} implies p.has_consented
+}
+
+invariant UniquePermissionPerKind {
+    for a in PermissionGrants:
+        for b in PermissionGrants:
+            a != b and a.participant = b.participant implies a.kind != b.kind
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor ActiveParticipant {
+    identified_by: Participant where status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface WelcomeScreen {
+    facing visitor: Participant
+
+    provides:
+        ParticipantProceedsFromWelcome(visitor)
+            when visitor.status = unstarted
+
+    @guidance
+        -- Shown exactly once, on first launch only. Introduces the research project
+        -- and its context (neurodiversity-affirmative research) before requesting consent.
+        -- Does not collect any data.
+}
+
+surface ConsentScreen {
+    facing visitor: Participant
+
+    provides:
+        ParticipantAcceptsInformedConsent(visitor)
+            when visitor.status = consenting
+
+    @guarantee ConsentIsFullyInformed
+        -- The complete consent document is presented. The acceptance action is
+        -- unavailable until the participant has scrolled to the end of the document.
+    @guarantee ConsentIsPersistent
+        -- Once accepted, this screen is never presented again. The ConsentRecord
+        -- persists for the full duration of the study on this device.
+    @guarantee PrivacyExplainedBeforeCollection
+        -- The consent document explicitly states that all data is stored exclusively
+        -- on the participant's device and is transmitted only by explicit participant
+        -- action. No data is collected before consent is given.
+}
+
+surface TutorialScreen {
+    facing visitor: Participant
+
+    exposes:
+        visitor.camera_granted
+        visitor.microphone_granted
+
+    provides:
+        ParticipantGrantsPermission(visitor, camera)
+        ParticipantGrantsPermission(visitor, microphone)
+        ParticipantDeniesPermission(visitor, camera)
+        ParticipantDeniesPermission(visitor, microphone)
+        ParticipantFinishesTutorial(visitor)
+            when visitor.status = tutorial
+
+    @guidance
+        -- Each permission request is preceded by a clear explanation of its purpose
+        -- and which response modes it enables.
+        -- The tutorial is also the appropriate moment to offer PWA installation
+        -- (home screen shortcut via config.pwa_base_url). Installation is never
+        -- mandatory and does not affect data collection.
+        -- On iOS (Safari), installation requires manual steps via the share menu
+        -- ("Agregar a inicio"). On Android/Chrome, a browser-native install prompt
+        -- is available. Both paths should be illustrated with device-appropriate
+        -- instructions (screenshots or animated guidance).
+}
+
+surface SensorySettingsPanel {
+    facing participant: ActiveParticipant
+
+    exposes:
+        participant.sensory_profile
+
+    provides:
+        ParticipantUpdatesSensoryProfile(participant, new_profile)
+
+    @guidance
+        -- Accessible at any time during the active study. Changes take effect
+        -- immediately. Theme, font size, dyslexia font, reduced motion, and
+        -- background noise are all independently configurable.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Can a participant withdraw consent after accepting? If so, what happens to their existing data — must it be wiped immediately?"
+open question "Should changes to sensory settings be recorded and included in the data export, to help researchers understand participant experience over time?"
+open question "Is there a mechanism for the researcher to remotely signal that new content is available, or is all progression strictly time-based?"
