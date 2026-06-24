@@ -8,9 +8,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Sonda" />
     <title>Sonda</title>
-    <link rel="icon" type="image/png" href="/au.png" />
-    <link rel="apple-touch-icon" href="/au.png" />
-    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/png" href="%BASE_URL%au.png" />
+    <link rel="apple-touch-icon" href="%BASE_URL%au.png" />
+    <link rel="manifest" href="%BASE_URL%manifest.json" />
 
     <!-- Google Fonts: Lexend -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,7 +22,7 @@
 
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Design Tokens: Variables centralizadas de diseño -->
-    <link rel="stylesheet" href="/design-tokens.css">
+    <link rel="stylesheet" href="%BASE_URL%design-tokens.css">
 
     <!-- Configuración de Tailwind CSS -->
     <script>
@@ -97,7 +97,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker
-          .register('/sw.js')
+          .register('%BASE_URL%sw.js')
           .catch((error) => {
             console.error('Error al registrar Service Worker:', error);
           });
