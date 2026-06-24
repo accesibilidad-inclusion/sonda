@@ -324,7 +324,7 @@ const App = () => {
           <img
             src={`${import.meta.env.BASE_URL}au.png`}
             alt="Símbolo del infinito dorado"
-            className="w-40 h-40 mb-10 object-contain drop-shadow-xl hover:scale-105 transition-transform duration-700"
+            className="w-56 h-56 mb-10 object-contain drop-shadow-xl hover:scale-105 transition-transform duration-700"
           />
           <h1 className="text-4xl font-black mb-4 text-deep-text tracking-tight">Hola.</h1>
           <p className="text-xl text-deep-text opacity-80 leading-relaxed mb-10 max-w-sm mx-auto">

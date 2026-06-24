@@ -10,7 +10,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNext }) => (
       <img
         src={`${import.meta.env.BASE_URL}au.png`}
         alt="Sonda Digital"
-        className="w-28 h-28 mb-10 object-contain drop-shadow-xl hover:scale-105 transition-transform duration-700"
+        className="w-44 h-44 mb-10 object-contain drop-shadow-xl hover:scale-105 transition-transform duration-700"
       />
 
       <h1 className="text-3xl font-black text-deep-text mb-4 tracking-tight leading-tight">

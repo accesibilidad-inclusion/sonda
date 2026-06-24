@@ -23,7 +23,7 @@ const InstallScreen: React.FC = () => {
         <img
           src={`${import.meta.env.BASE_URL}au.png`}
           alt="Sonda Digital"
-          className="w-24 h-24 mb-8 object-contain drop-shadow-lg"
+          className="w-40 h-40 mb-8 object-contain drop-shadow-lg"
         />
 
         {!installed ? (
