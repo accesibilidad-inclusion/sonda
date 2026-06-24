@@ -46,7 +46,11 @@ function getInitialScreen(): AppScreen {
   if (window.location.hash === '#dev') return AppScreen.DEV_PANEL;
 
   const hasConsented = storageService.hasConsented();
-  if (!hasConsented) return AppScreen.ONBOARDING_GREETING;
+  if (!hasConsented) {
+    // En PWA el localStorage es aislado del navegador, así que el consentimiento
+    // no se transfiere. Si ya estamos en modo standalone, ir directo al consentimiento.
+    return isPWA() ? AppScreen.ONBOARDING_CONSENT : AppScreen.ONBOARDING_GREETING;
+  }
 
   if (!isPWA()) return AppScreen.ONBOARDING_INSTALL;
 
