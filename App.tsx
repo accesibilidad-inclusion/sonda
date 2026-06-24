@@ -45,7 +45,7 @@ function getInitialScreen(): AppScreen {
   if (window.location.hash === '#dev') return AppScreen.DEV_PANEL;
 
   const hasConsented = storageService.hasConsented();
-  if (!hasConsented) return AppScreen.ONBOARDING_CONSENT;
+  if (!hasConsented) return AppScreen.ONBOARDING_GREETING;
 
   if (!isPWA()) return AppScreen.ONBOARDING_INSTALL;
 
@@ -312,6 +312,25 @@ const App = () => {
   return (
     <div className="min-h-screen bg-calm-bg relative overflow-hidden font-sans text-deep-text">
       {/* Onboarding — contexto navegador */}
+      {screen === AppScreen.ONBOARDING_GREETING && (
+        <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center bg-calm-bg transition-colors">
+          <img
+            src="/au.png"
+            alt="Símbolo del infinito dorado"
+            className="w-40 h-40 mb-10 object-contain drop-shadow-xl hover:scale-105 transition-transform duration-700"
+          />
+          <h1 className="text-4xl font-black mb-4 text-deep-text tracking-tight">Hola.</h1>
+          <p className="text-xl text-deep-text opacity-80 leading-relaxed mb-10 max-w-sm mx-auto">
+            Gracias por ser parte de este proyecto. Queremos entender la universidad desde tu perspectiva.
+          </p>
+          <button
+            onClick={() => setScreen(AppScreen.ONBOARDING_CONSENT)}
+            className="w-full max-w-sm py-4 bg-deep-text text-calm-bg rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl hover:-translate-y-1 active:translate-y-0 transition-all"
+          >
+            Comenzar
+          </button>
+        </div>
+      )}
       {screen === AppScreen.ONBOARDING_CONSENT && <ConsentScreen onAccept={handleConsentAccept} />}
       {screen === AppScreen.ONBOARDING_INSTALL && <InstallScreen />}
 
