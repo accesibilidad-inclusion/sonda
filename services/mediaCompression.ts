@@ -4,7 +4,9 @@
  * Compresses images, videos, and audio to reduce localStorage size
  */
 
-import { IS_DEVELOPER_MODE } from '../constants';
+import { storageService } from './storageService';
+
+const IS_DEVELOPER_MODE = storageService.isDevMode();
 
 // Configuration
 const IMAGE_MAX_DIMENSION = 1000;  // Max width or height in pixels

@@ -1,10 +1,11 @@
 -- allium: 3
 -- participant.allium
 
--- Scope: Participant identity, informed consent, permission grants, and sensory preferences
--- Includes: Participant, ConsentRecord, PermissionGrant, SensoryProfile, onboarding flow
+-- Scope: Participant identity, informed consent, permission grants, sensory preferences,
+--        and two-context onboarding flow (browser + PWA)
+-- Includes: Participant, ConsentRecord, PermissionGrant, SensoryProfile, onboarding routing
 -- Excludes:
---   - Research content and weekly progression (see research.allium)
+--   - Research content and momento progression (see research.allium)
 --   - Data export and protection (see data-sovereignty.allium)
 --   - Wellbeing tools and fidget sessions (see wellbeing.allium)
 
@@ -33,17 +34,20 @@ enum PermissionStatus { not_requested | granted | denied }
 ------------------------------------------------------------
 
 entity Participant {
-    status: unstarted | consenting | tutorial | active | completed
+    status: unstarted | consented | active | completed
 
     transitions status {
-        unstarted -> consenting
-        consenting -> tutorial
-        tutorial -> active
+        unstarted -> consented
+        consented -> active
         active -> completed
         terminal: completed
     }
 
     sensory_profile: SensoryProfile
+
+    -- Onboarding tracking (PWA context)
+    has_seen_welcome: Boolean
+    has_seen_permissions_screen: Boolean
 
     -- Relationships
     consent: ConsentRecord with participant = this
@@ -53,6 +57,7 @@ entity Participant {
     has_consented: consent != null
     camera_granted: permissions.any(p => p.kind = camera and p.status = granted)
     microphone_granted: permissions.any(p => p.kind = microphone and p.status = granted)
+    onboarding_complete: has_consented and has_seen_welcome and has_seen_permissions_screen
 
     invariant ValidNoiseVolume {
         sensory_profile.noise_volume >= 0.0 and sensory_profile.noise_volume <= 1.0
@@ -106,6 +111,8 @@ rule ParticipantInitialized {
     ensures:
         Participant.created(
             status: unstarted,
+            has_seen_welcome: false,
+            has_seen_permissions_screen: false,
             sensory_profile: {
                 theme: calm,
                 font_size: normal,
@@ -122,24 +129,52 @@ rule ParticipantInitialized {
         -- all progress and preferences without re-running onboarding.
 }
 
--- Onboarding
+-- Launch routing
+-- On every app launch (after initialization), the app determines which screen
+-- to present based on the participant's current state.
 
-rule ParticipantAdvancesToConsent {
-    when: ParticipantProceedsFromWelcome(participant)
-    requires: participant.status = unstarted
-    ensures: participant.status = consenting
+rule LaunchRouter {
+    when: AppLaunched
+    requires: exists Participant
+    let p = Participant
+    ensures:
+        if not p.has_consented:
+            RouteToScreen(screen: consent)
+        else if not p.has_seen_welcome:
+            RouteToScreen(screen: welcome)
+        else if not p.has_seen_permissions_screen:
+            RouteToScreen(screen: permissions)
+        else:
+            RouteToScreen(screen: dashboard)
+
+    @guidance
+        -- The ConsentScreen and InstallScreen belong to the browser context
+        -- (before PWA installation). WelcomeScreen, PermissionsScreen and
+        -- StudyDashboard belong to the PWA context (opened from home screen icon).
+        -- The router does not enforce context boundaries; it routes based on state.
+        -- A participant who has consented but not yet installed the PWA will see
+        -- the InstallScreen, which is handled within ConsentScreen's post-accept flow.
 }
+
+-- Consent (browser context)
 
 rule ParticipantAcceptsConsent {
     when: ParticipantAcceptsInformedConsent(participant)
-    requires: participant.status = consenting
+    requires: participant.status = unstarted
     ensures:
-        participant.status = tutorial
+        participant.status = consented
         ConsentRecord.created(participant: participant, accepted_at: now)
         PermissionsRequested(participant)
+
+    @guidance
+        -- After consent is accepted, the browser shows the InstallScreen as a
+        -- continuation of the consent flow. The InstallScreen is not a separate
+        -- status transition; it is the natural next view within the browser context.
+        -- The PermissionsRequested chain creates the PermissionGrant entities so
+        -- they exist by the time the participant reaches the PWA PermissionsScreen.
 }
 
--- Permissions (requested as a chained consequence of consent acceptance)
+-- Permissions (entity creation chained from consent acceptance)
 
 rule CameraAndMicrophoneRequested {
     when: PermissionsRequested(participant)
@@ -158,9 +193,10 @@ rule CameraAndMicrophoneRequested {
         )
 
     @guidance
-        -- Both permission requests are triggered immediately after consent.
-        -- The tutorial screen explains the purpose of each permission before
-        -- the device's native permission prompt appears.
+        -- PermissionGrant entities are created at consent time so they are available
+        -- when the participant later reaches the PermissionsScreen inside the PWA.
+        -- The actual device permission prompts appear on the PermissionsScreen or
+        -- in-context within individual activities.
 }
 
 rule PermissionGranted {
@@ -186,21 +222,40 @@ rule PermissionDenied {
         -- A denied permission restricts available response modes (audio requires
         -- microphone; photo and video require camera) but does not block participation.
         -- Unavailable modes are explained rather than silently hidden.
+        -- Permissions can be re-requested in-context within individual activities
+        -- (e.g. when the participant attempts to use a mode that requires a denied
+        -- permission), but not from the PermissionsScreen itself.
 }
 
--- Tutorial completion
+-- PWA onboarding
 
-rule ParticipantCompletesTutorial {
-    when: ParticipantFinishesTutorial(participant)
-    requires: participant.status = tutorial
-    ensures: participant.status = active
+rule ParticipantSeesWelcome {
+    when: ParticipantCompletesWelcome(participant)
+    requires: participant.status = consented
+    requires: not participant.has_seen_welcome
+    ensures: participant.has_seen_welcome = true
 }
 
--- Sensory preferences (adjustable at any time during the active study)
+rule ParticipantSeesPermissionsScreen {
+    when: ParticipantCompletesPermissionsScreen(participant)
+    requires: participant.status = consented
+    requires: participant.has_seen_welcome
+    requires: not participant.has_seen_permissions_screen
+    ensures:
+        participant.has_seen_permissions_screen = true
+        participant.status = active
+
+    @guidance
+        -- This is the final onboarding step. Regardless of whether permissions
+        -- were granted or skipped, completing this screen transitions the
+        -- participant to active status and routes to the StudyDashboard.
+}
+
+-- Sensory preferences (adjustable at any time during consented or active phases)
 
 rule SensoryProfileUpdated {
     when: ParticipantUpdatesSensoryProfile(participant, new_profile)
-    requires: participant.status in {tutorial, active}
+    requires: participant.status in {consented, active}
     ensures: participant.sensory_profile = new_profile
 }
 
@@ -219,10 +274,25 @@ invariant ConsentPrecedesStudy {
         p.status in {active, completed} implies p.has_consented
 }
 
+invariant ConsentNeverRepeated {
+    for p in Participants:
+        p.has_consented implies p.status != unstarted
+}
+
 invariant UniquePermissionPerKind {
     for a in PermissionGrants:
         for b in PermissionGrants:
             a != b and a.participant = b.participant implies a.kind != b.kind
+}
+
+invariant WelcomePrecedesPermissionsScreen {
+    for p in Participants:
+        p.has_seen_permissions_screen implies p.has_seen_welcome
+}
+
+invariant OnboardingPrecedesActive {
+    for p in Participants:
+        p.status = active implies p.onboarding_complete
 }
 
 ------------------------------------------------------------
@@ -237,39 +307,80 @@ actor ActiveParticipant {
 -- Surfaces
 ------------------------------------------------------------
 
-surface WelcomeScreen {
-    facing visitor: Participant
-
-    provides:
-        ParticipantProceedsFromWelcome(visitor)
-            when visitor.status = unstarted
-
-    @guidance
-        -- Shown exactly once, on first launch only. Introduces the research project
-        -- and its context (neurodiversity-affirmative research) before requesting consent.
-        -- Does not collect any data.
-}
+-- Browser context surfaces (pre-install)
 
 surface ConsentScreen {
     facing visitor: Participant
 
     provides:
         ParticipantAcceptsInformedConsent(visitor)
-            when visitor.status = consenting
+            when visitor.status = unstarted
 
     @guarantee ConsentIsFullyInformed
         -- The complete consent document is presented. The acceptance action is
         -- unavailable until the participant has scrolled to the end of the document.
-    @guarantee ConsentIsPersistent
-        -- Once accepted, this screen is never presented again. The ConsentRecord
-        -- persists for the full duration of the study on this device.
+    @guarantee ConsentShownOnce
+        -- Once a ConsentRecord exists for this participant, this surface is never
+        -- reached again under any circumstance. The LaunchRouter skips this surface
+        -- unconditionally when has_consented is true.
     @guarantee PrivacyExplainedBeforeCollection
         -- The consent document explicitly states that all data is stored exclusively
         -- on the participant's device and is transmitted only by explicit participant
         -- action. No data is collected before consent is given.
+
+    @guidance
+        -- This is the first screen shown in the browser context. There is no
+        -- preceding welcome or introduction screen. The consent document itself
+        -- provides all necessary context about the research project (FONDECYT 1251541).
 }
 
-surface TutorialScreen {
+surface InstallScreen {
+    facing visitor: Participant
+
+    @guarantee PlatformSpecificGuidance
+        -- Installation instructions are adapted to the participant's platform.
+        -- iOS: illustrates Share menu > "Agregar a inicio" flow.
+        -- Android: uses the browser-native install prompt when available.
+    @guarantee FarewellMessage
+        -- After installation guidance, the screen shows a farewell message
+        -- directing the participant to close this browser tab and open the app
+        -- from the home screen icon to continue.
+
+    @guidance
+        -- This surface is shown immediately after consent acceptance, within the
+        -- same browser session. It is not a navigable destination; it is the
+        -- natural continuation after ParticipantAcceptsInformedConsent.
+        -- The app icon is public/au.png (golden infinity symbol), used as both
+        -- the PWA icon and favicon.
+        -- This screen does not collect data or change participant state. Its sole
+        -- purpose is to guide the participant through PWA installation and then
+        -- hand off to the PWA context.
+}
+
+-- PWA context surfaces (post-install, opened from home screen icon)
+
+surface WelcomeScreen {
+    facing visitor: Participant
+
+    provides:
+        ParticipantCompletesWelcome(visitor)
+            when visitor.status = consented and not visitor.has_seen_welcome
+
+    @guarantee CoInvestigatorFraming
+        -- Explains the participant's role as a co-investigator who will report
+        -- their own field experience. This is role framing, not a consent
+        -- re-explanation. The consent document is not shown or summarised here.
+    @guarantee ShownOnce
+        -- Once has_seen_welcome is true, this surface is never reached again.
+
+    @guidance
+        -- First screen shown inside the PWA on initial launch. The participant
+        -- has already consented in the browser context. This screen establishes
+        -- the research relationship: the participant is not a test subject but a
+        -- co-investigator observing and reporting their own sensory experience.
+}
+
+surface PermissionsScreen {
     facing visitor: Participant
 
     exposes:
@@ -281,19 +392,26 @@ surface TutorialScreen {
         ParticipantGrantsPermission(visitor, microphone)
         ParticipantDeniesPermission(visitor, camera)
         ParticipantDeniesPermission(visitor, microphone)
-        ParticipantFinishesTutorial(visitor)
-            when visitor.status = tutorial
+        ParticipantCompletesPermissionsScreen(visitor)
+            when visitor.status = consented and visitor.has_seen_welcome and not visitor.has_seen_permissions_screen
+
+    @guarantee ContextualExplanation
+        -- Each permission request is accompanied by an explanation of why it
+        -- matters for the research activities (camera for photo/video responses,
+        -- microphone for audio responses).
+    @guarantee SkipIsValid
+        -- The participant can skip any or all permissions without consequence.
+        -- Completing this screen without granting permissions is explicitly supported.
+    @guarantee ShownOnce
+        -- Once has_seen_permissions_screen is true, this surface is never reached
+        -- again. Permissions can still be granted later in-context within individual
+        -- activities, but not from this screen.
 
     @guidance
-        -- Each permission request is preceded by a clear explanation of its purpose
-        -- and which response modes it enables.
-        -- The tutorial is also the appropriate moment to offer PWA installation
-        -- (home screen shortcut via config.pwa_base_url). Installation is never
-        -- mandatory and does not affect data collection.
-        -- On iOS (Safari), installation requires manual steps via the share menu
-        -- ("Agregar a inicio"). On Android/Chrome, a browser-native install prompt
-        -- is available. Both paths should be illustrated with device-appropriate
-        -- instructions (screenshots or animated guidance).
+        -- Second screen shown inside the PWA, immediately after WelcomeScreen.
+        -- Regardless of whether the participant grants, denies, or skips permissions,
+        -- completing this screen transitions the participant to active status and
+        -- routes to the StudyDashboard.
 }
 
 surface SensorySettingsPanel {

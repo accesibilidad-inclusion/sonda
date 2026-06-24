@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { ArrowLeft, Camera, Mic, Type, SkipForward, HelpCircle, MessageSquare, Trash2, Pencil, Video, PlayCircle } from 'lucide-react';
+import { ArrowLeft, Camera, Mic, Type, SkipForward, HelpCircle, MessageSquare, Trash2, Pencil, Video } from 'lucide-react';
 import { Activity, ResponseMode, ResponseItem } from '../types';
-import { IS_DEVELOPER_MODE } from '../constants';
 import { compressImage, compressVideo, getAudioConstraints, getAudioRecorderOptions } from '../services/mediaCompression';
 
 interface ActivityViewProps {
@@ -10,6 +9,14 @@ interface ActivityViewProps {
   onBack: () => void;
 }
 
+const MODE_LABELS: Record<ResponseMode, string> = {
+  [ResponseMode.TEXT]: 'Texto',
+  [ResponseMode.AUDIO]: 'Audio',
+  [ResponseMode.PHOTO]: 'Foto / Video',
+  [ResponseMode.VIDEO]: 'Video',
+  [ResponseMode.SKIPPED]: 'Sin respuesta',
+};
+
 const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack }) => {
   const [mode, setMode] = useState<ResponseMode | null>(null);
   const [textInput, setTextInput] = useState('');
@@ -17,229 +24,133 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showScaffold, setShowScaffold] = useState(false);
   const [editingTimestamp, setEditingTimestamp] = useState<number | null>(null);
-  
-  // Media Recording Refs
+  const [showMediaMenu, setShowMediaMenu] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const [showMediaMenu, setShowMediaMenu] = useState(false);
 
-  // --- ACTIONS ---
-
-  const addResponse = async (content: string, type: ResponseMode) => {
-    setIsSubmitting(true);
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    const newResponse: ResponseItem = {
-      mode: type,
-      content: content,
-      timestamp: Date.now()
-    };
-
-    onUpdate(activity.id, [...activity.responses, newResponse]);
-    resetForm();
-  };
-
-  const updateResponse = (timestamp: number, newContent: string) => {
-      const updatedList = activity.responses.map(r => 
-          r.timestamp === timestamp ? { ...r, content: newContent } : r
-      );
-      onUpdate(activity.id, updatedList);
-      resetForm();
-  };
-
-  const deleteResponse = (timestamp: number) => {
-      if(confirm("¿Estás seguro de que quieres borrar esta respuesta?")) {
-          const updatedList = activity.responses.filter(r => r.timestamp !== timestamp);
-          onUpdate(activity.id, updatedList);
-      }
-  };
-
-  const handleEditClick = (item: ResponseItem) => {
-      if (item.mode === ResponseMode.TEXT && item.content) {
-          setTextInput(item.content);
-          setEditingTimestamp(item.timestamp);
-          setMode(ResponseMode.TEXT);
-      }
-  };
-
-  // Close media menu when clicking outside
+  // Cierra el menú de medios al tocar fuera
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (showMediaMenu) {
-        const target = e.target as HTMLElement;
-        if (!target.closest('.media-menu-container')) {
-          setShowMediaMenu(false);
-        }
+      if (showMediaMenu && !(e.target as HTMLElement).closest('.media-menu-container')) {
+        setShowMediaMenu(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showMediaMenu]);
 
-  const resetForm = () => {
-      setIsSubmitting(false);
-      setMode(null);
-      setTextInput('');
-      setEditingTimestamp(null);
-      setIsRecording(false);
-      audioChunksRef.current = [];
+  // --- Acciones ---
+
+  const addResponse = async (content: string | null, type: ResponseMode) => {
+    setIsSubmitting(true);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    const newResponse: ResponseItem = { mode: type, content, timestamp: Date.now() };
+    onUpdate(activity.id, [...activity.responses, newResponse]);
+    resetForm();
+  };
+
+  const replaceResponse = (timestamp: number, newContent: string | null, newMode: ResponseMode) => {
+    const updatedList = activity.responses.map(r =>
+      r.timestamp === timestamp ? { ...r, content: newContent, mode: newMode } : r
+    );
+    onUpdate(activity.id, updatedList);
+    resetForm();
+  };
+
+  const deleteResponse = (timestamp: number) => {
+    if (confirm('¿Borrar esta respuesta?')) {
+      onUpdate(activity.id, activity.responses.filter(r => r.timestamp !== timestamp));
+    }
   };
 
   const handleSkip = () => {
-    // "Right to Resistance" - Skipping is valid
-    const newResponse: ResponseItem = {
-        mode: ResponseMode.SKIPPED,
-        content: null,
-        timestamp: Date.now()
-    };
-    onUpdate(activity.id, [...activity.responses, newResponse]);
+    addResponse(null, ResponseMode.SKIPPED);
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const isVideo = file.type.startsWith('video/');
-      const responseType = isVideo ? ResponseMode.VIDEO : ResponseMode.PHOTO;
+  const resetForm = () => {
+    setIsSubmitting(false);
+    setMode(null);
+    setTextInput('');
+    setEditingTimestamp(null);
+    setIsRecording(false);
+    setPermissionError(null);
+    audioChunksRef.current = [];
+  };
 
-      try {
-        setIsSubmitting(true);
+  // Iniciar edición — para texto edita inline; para otros, abre la captura correspondiente
+  const handleEditClick = (item: ResponseItem) => {
+    setEditingTimestamp(item.timestamp);
+    if (item.mode === ResponseMode.TEXT) {
+      setTextInput(item.content ?? '');
+      setMode(ResponseMode.TEXT);
+    } else if (item.mode === ResponseMode.AUDIO) {
+      setMode(ResponseMode.AUDIO);
+    } else if (item.mode === ResponseMode.PHOTO || item.mode === ResponseMode.VIDEO) {
+      setMode(ResponseMode.PHOTO);
+    } else if (item.mode === ResponseMode.SKIPPED) {
+      setMode(ResponseMode.TEXT);
+    }
+  };
 
-        if (isVideo) {
-          // Compress video (creates thumbnail for now)
-          const compressedVideo = await compressVideo(file);
-          await addResponse(compressedVideo, responseType);
-        } else {
-          // Compress image
-          const compressedImage = await compressImage(file);
-          await addResponse(compressedImage, responseType);
-        }
-      } catch (error) {
-        console.error('[ActivityView] Compression error:', error);
-        if (error instanceof Error) {
-          alert(error.message);
-        } else {
-          alert('Error al procesar el archivo. Por favor intenta con un archivo más pequeño.');
-        }
-        setIsSubmitting(false);
-      }
+  // --- Grabación de audio ---
+
+  const requestMicPermission = async (): Promise<boolean> => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
+      stream.getTracks().forEach(t => t.stop());
+      return true;
+    } catch {
+      return false;
     }
   };
 
   const startRecording = async () => {
-    if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Starting recording...');
-
-    // Check if browser supports audio recording
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      const errorMsg = "Tu navegador no soporta grabación de audio. Intenta usar Chrome, Firefox o Safari actualizado.";
-      if (IS_DEVELOPER_MODE) console.error('[AudioRecording] getUserMedia not supported');
-      alert(errorMsg);
+    setPermissionError(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setPermissionError('Tu navegador no soporta grabación de audio.');
       return;
     }
-
-    if (typeof MediaRecorder === 'undefined') {
-      const errorMsg = "MediaRecorder no está disponible en tu navegador.";
-      if (IS_DEVELOPER_MODE) console.error('[AudioRecording] MediaRecorder not available');
-      alert(errorMsg);
-      return;
-    }
-
     try {
-      if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Requesting microphone access...');
-
-      // Use optimized audio constraints (mono, 16kHz, noise suppression)
-      const audioConstraints = getAudioConstraints();
-      const stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
-      if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Microphone access granted', stream);
-
-      // Get optimized recorder options (Opus codec, 32kbps)
+      const stream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
       const recorderOptions = getAudioRecorderOptions();
-      const mimeType = recorderOptions.mimeType; // Save for later use in blob creation
-      if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Using MIME type: ${mimeType}, Bitrate: ${recorderOptions.audioBitsPerSecond}bps`);
-
+      const mimeType = recorderOptions.mimeType;
       const mediaRecorder = new MediaRecorder(stream, recorderOptions);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
-      if (IS_DEVELOPER_MODE) console.log('[AudioRecording] MediaRecorder created', mediaRecorder);
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-          if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Data chunk received: ${event.data.size} bytes`);
-        }
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = () => {
-        if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Recording stopped');
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Audio blob created: ${audioBlob.size} bytes`);
-
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = () => {
           const base64Audio = reader.result as string;
-          if (IS_DEVELOPER_MODE) console.log(`[AudioRecording] Base64 audio length: ${base64Audio.length}`);
-
-           // Check size (~4MB limit for base64 string to be safe with 5MB localStorage)
-           if (base64Audio.length > 4 * 1024 * 1024) {
-             alert("El audio es demasiado largo para guardarse localmente. Intenta grabar algo más corto.");
-             if (IS_DEVELOPER_MODE) console.warn('[AudioRecording] Audio too large for localStorage');
-           } else {
-             if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Saving audio response');
-             addResponse(base64Audio, ResponseMode.AUDIO);
-           }
+          if (base64Audio.length > 4 * 1024 * 1024) {
+            alert('El audio es demasiado largo. Intenta grabar algo más corto.');
+          } else if (editingTimestamp) {
+            replaceResponse(editingTimestamp, base64Audio, ResponseMode.AUDIO);
+          } else {
+            addResponse(base64Audio, ResponseMode.AUDIO);
+          }
         };
-
-        // Stop all tracks to release microphone
-        stream.getTracks().forEach(track => {
-          track.stop();
-          if (IS_DEVELOPER_MODE) console.log('[AudioRecording] Audio track stopped');
-        });
-      };
-
-      mediaRecorder.onerror = (event) => {
-        if (IS_DEVELOPER_MODE) console.error('[AudioRecording] MediaRecorder error:', event);
-        alert("Ocurrió un error durante la grabación. Por favor intenta de nuevo.");
+        stream.getTracks().forEach(t => t.stop());
       };
 
       mediaRecorder.start();
       setIsRecording(true);
-      if (IS_DEVELOPER_MODE) console.log('[AudioRecording] ✅ Recording started successfully');
     } catch (error) {
-      if (IS_DEVELOPER_MODE) {
-        console.error("[AudioRecording] ❌ Error accessing microphone:", error);
-        if (error instanceof Error) {
-          console.error('[AudioRecording] Error name:', error.name);
-          console.error('[AudioRecording] Error message:', error.message);
-        }
-      }
-
-      let errorMessage = "No se pudo acceder al micrófono. ";
-
-      if (error instanceof DOMException) {
-        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-          errorMessage += "Debes permitir el acceso al micrófono en la configuración de tu navegador.";
-        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-          errorMessage += "No se detectó ningún micrófono conectado.";
-        } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-          errorMessage += "El micrófono está siendo usado por otra aplicación.";
-        } else if (error.name === 'OverconstrainedError') {
-          errorMessage += "No se encontró un micrófono que cumpla con los requisitos.";
-        } else if (error.name === 'SecurityError') {
-          errorMessage += "Acceso denegado por motivos de seguridad. Asegúrate de usar HTTPS o localhost.";
-        } else {
-          errorMessage += `Error: ${error.name}`;
-        }
+      if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError')) {
+        setPermissionError('No se pudo acceder al micrófono. Toca "Permitir micrófono" para conceder el permiso.');
       } else {
-        errorMessage += "Por favor verifica los permisos del navegador.";
+        setPermissionError('No se pudo acceder al micrófono. Verifica los permisos del dispositivo.');
       }
-
-      alert(errorMessage);
     }
   };
 
@@ -250,96 +161,118 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
     }
   };
 
-  const toggleRecording = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
+  // --- Archivos de medios ---
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0]) return;
+    const file = e.target.files[0];
+    const isVideo = file.type.startsWith('video/');
+    const responseType = isVideo ? ResponseMode.VIDEO : ResponseMode.PHOTO;
+
+    try {
+      setIsSubmitting(true);
+      const compressed = isVideo ? await compressVideo(file) : await compressImage(file);
+      if (editingTimestamp) {
+        replaceResponse(editingTimestamp, compressed, responseType);
+      } else {
+        await addResponse(compressed, responseType);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Error al procesar el archivo.');
+      setIsSubmitting(false);
     }
   };
 
-  // --- RENDERING HELPERS ---
+  // --- Renderizado ---
+
+  // Filtra los modos permitidos para esta actividad (SKIPPED siempre disponible)
+  const allowed = activity.allowedModes ?? [ResponseMode.TEXT, ResponseMode.AUDIO, ResponseMode.PHOTO];
+  const showPhotoButton = allowed.includes(ResponseMode.PHOTO) || allowed.includes(ResponseMode.VIDEO);
+  const showAudioButton = allowed.includes(ResponseMode.AUDIO);
+  const showTextButton = allowed.includes(ResponseMode.TEXT);
+
+  const renderPermissionBanner = () => (
+    <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-800">
+      <p className="mb-3">{permissionError}</p>
+      <button
+        onClick={async () => {
+          const granted = await requestMicPermission();
+          if (granted) {
+            setPermissionError(null);
+            startRecording();
+          } else {
+            setPermissionError('Permiso denegado. Actívalo en la configuración de tu dispositivo.');
+          }
+        }}
+        className="px-4 py-2 bg-yellow-600 text-white rounded-lg font-semibold text-sm"
+      >
+        Permitir micrófono
+      </button>
+    </div>
+  );
 
   const renderModeSelector = () => (
-    <div className="grid grid-cols-3 gap-4 mt-8">
-      {/* Photo/Video Button with Menu */}
-      <div className="relative media-menu-container">
+    <div className={`grid gap-4 mt-8 ${[showPhotoButton, showAudioButton, showTextButton].filter(Boolean).length === 3 ? 'grid-cols-3' : [showPhotoButton, showAudioButton, showTextButton].filter(Boolean).length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      {/* Foto/Video */}
+      {showPhotoButton && (
+        <div className="relative media-menu-container">
+          <button
+            onClick={() => setShowMediaMenu(!showMediaMenu)}
+            className="w-full flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
+          >
+            <div className="p-3 mb-2 text-white bg-blue-500 rounded-full">
+              <Camera size={24} />
+            </div>
+            <span className="text-sm font-medium text-deep-text">Imagen</span>
+          </button>
+          {showMediaMenu && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-card-bg border-2 border-soft-gray rounded-lg shadow-lg overflow-hidden z-20 animate-fade-in">
+              <button
+                onClick={() => { cameraInputRef.current?.click(); setShowMediaMenu(false); }}
+                className="w-full flex items-center p-3 hover:bg-calm-bg text-left border-b border-soft-gray text-sm font-medium text-deep-text"
+              >
+                Tomar foto o video
+              </button>
+              <button
+                onClick={() => { fileInputRef.current?.click(); setShowMediaMenu(false); }}
+                className="w-full flex items-center p-3 hover:bg-calm-bg text-left text-sm font-medium text-deep-text"
+              >
+                Subir desde galería
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Audio */}
+      {showAudioButton && (
         <button
-          onClick={() => setShowMediaMenu(!showMediaMenu)}
-          className="w-full flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
+          onClick={() => setMode(ResponseMode.AUDIO)}
+          className="flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
         >
-          <div className="p-3 mb-2 text-white bg-blue-500 rounded-full">
-            <Camera size={24} />
+          <div className="p-3 mb-2 text-white bg-purple-500 rounded-full">
+            <Mic size={24} />
           </div>
-          <span className="text-sm font-medium text-deep-text">Imagen</span>
+          <span className="text-sm font-medium text-deep-text">Audio</span>
         </button>
+      )}
 
-        {/* Dropdown Menu */}
-        {showMediaMenu && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-card-bg border-2 border-soft-gray rounded-lg shadow-lg overflow-hidden z-20 animate-fade-in">
-            <button
-              onClick={() => {
-                cameraInputRef.current?.click();
-                setShowMediaMenu(false);
-              }}
-              className="w-full flex items-center p-3 hover:bg-calm-bg transition-colors text-left border-b border-soft-gray"
-            >
-              {/* <Camera size={20} className="text-blue-500" /> */}
-              <span className="text-sm font-medium text-deep-text">Tomar foto o video</span>
-            </button>
-            <button
-              onClick={() => {
-                fileInputRef.current?.click();
-                setShowMediaMenu(false);
-              }}
-              className="w-full flex items-center p-3 hover:bg-calm-bg transition-colors text-left"
-            >
-              {/* <PlayCircle size={20} className="text-blue-500" /> */}
-              <span className="text-sm font-medium text-deep-text">Subir desde galería</span>
-            </button>
+      {/* Texto */}
+      {showTextButton && (
+        <button
+          onClick={() => setMode(ResponseMode.TEXT)}
+          className="flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
+        >
+          <div className="p-3 mb-2 text-white bg-green-500 rounded-full">
+            <Type size={24} />
           </div>
-        )}
-      </div>
+          <span className="text-sm font-medium text-deep-text">Texto</span>
+        </button>
+      )}
 
-      <button
-        onClick={() => setMode(ResponseMode.AUDIO)}
-        className="flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
-      >
-        <div className="p-3 mb-2 text-white bg-purple-500 rounded-full">
-          <Mic size={24} />
-        </div>
-        <span className="text-sm font-medium text-deep-text">Audio</span>
-      </button>
-
-      <button
-        onClick={() => setMode(ResponseMode.TEXT)}
-        className="flex flex-col items-center justify-center p-6 bg-card-bg border-2 border-soft-gray rounded-2xl shadow-sm hover:border-calm-blue active:scale-95 transition-all"
-      >
-        <div className="p-3 mb-2 text-white bg-green-500 rounded-full">
-          <Type size={24} />
-        </div>
-        <span className="text-sm font-medium text-deep-text">Texto</span>
-      </button>
-
-      {/* Hidden file inputs */}
-      {/* Input for CAMERA (with capture) - Android/iOS camera */}
-      <input
-        type="file"
-        accept="image/*,video/*"
-        capture="environment"
-        ref={cameraInputRef}
-        className="hidden"
-        onChange={handleFileChange}
-      />
-
-      {/* Input for GALLERY (without capture) - File picker */}
-      <input
-        type="file"
-        accept="image/*,video/*"
-        ref={fileInputRef}
-        className="hidden"
-        onChange={handleFileChange}
-      />
+      {/* Inputs ocultos */}
+      <input type="file" accept="image/*,video/*" capture="environment" ref={cameraInputRef} className="hidden" onChange={handleFileChange} />
+      <input type="file" accept="image/*,video/*" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
     </div>
   );
 
@@ -355,18 +288,18 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
             autoFocus
           />
           <div className="flex gap-3 mt-4">
-             <button 
-              onClick={resetForm}
-              className="px-6 py-3 font-medium text-deep-text bg-calm-bg rounded-xl hover:opacity-80"
-            >
+            <button onClick={resetForm} className="px-6 py-3 font-medium text-deep-text bg-calm-bg rounded-xl hover:opacity-80">
               Cancelar
             </button>
-            <button 
-              onClick={() => editingTimestamp ? updateResponse(editingTimestamp, textInput) : addResponse(textInput, ResponseMode.TEXT)}
+            <button
+              onClick={() => {
+                if (editingTimestamp) replaceResponse(editingTimestamp, textInput, ResponseMode.TEXT);
+                else addResponse(textInput, ResponseMode.TEXT);
+              }}
               disabled={!textInput.trim() || isSubmitting}
               className="flex-1 px-6 py-3 font-bold text-btn-text bg-calm-blue rounded-xl disabled:opacity-50"
             >
-              {isSubmitting ? 'Guardando...' : (editingTimestamp ? 'Actualizar' : 'Enviar Respuesta')}
+              {isSubmitting ? 'Guardando...' : editingTimestamp ? 'Actualizar' : 'Enviar'}
             </button>
           </div>
         </div>
@@ -376,32 +309,38 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
     if (mode === ResponseMode.AUDIO) {
       return (
         <div className="mt-8 flex flex-col items-center animate-fade-in">
-          <button 
-            onClick={toggleRecording}
-            className={`p-8 rounded-full mb-6 transition-all duration-500 cursor-pointer ${isRecording ? 'bg-red-100 ring-4 ring-red-200 shadow-lg scale-110' : 'bg-card-bg border-2 border-soft-gray hover:border-calm-blue hover:shadow-md'}`}
-            aria-label={isRecording ? "Detener grabación" : "Iniciar grabación"}
+          <button
+            onClick={() => isRecording ? stopRecording() : startRecording()}
+            className={`p-8 rounded-full mb-6 transition-all duration-500 cursor-pointer ${
+              isRecording
+                ? 'bg-red-100 ring-4 ring-red-200 shadow-lg scale-110'
+                : 'bg-card-bg border-2 border-soft-gray hover:border-calm-blue hover:shadow-md'
+            }`}
+            aria-label={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
           >
             <Mic size={48} className={isRecording ? 'text-red-500 animate-pulse' : 'text-gray-400'} />
           </button>
-          <p className="mb-8 text-lg font-medium text-deep-text">
-            {isRecording ? 'Grabando... Toca el micrófono para terminar.' : 'Toca el micrófono para comenzar'}
+          <p className="mb-6 text-lg font-medium text-deep-text">
+            {isRecording ? 'Grabando… toca el micrófono para terminar.' : 'Toca el micrófono para comenzar'}
           </p>
-          
-          <div className="flex w-full gap-3">
-             <button 
-              onClick={resetForm}
-              disabled={isRecording}
-              className="px-6 py-3 font-medium text-deep-text bg-calm-bg rounded-xl disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-            <button 
-              onClick={toggleRecording}
-              className={`flex-1 px-6 py-3 font-bold text-btn-text rounded-xl transition-colors ${isRecording ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-calm-blue hover:opacity-90'}`}
-            >
-              {isRecording ? 'Terminar y Guardar' : 'Grabar'}
-            </button>
-          </div>
+
+          {permissionError && renderPermissionBanner()}
+
+          {!permissionError && (
+            <div className="flex w-full gap-3">
+              <button onClick={resetForm} disabled={isRecording} className="px-6 py-3 font-medium text-deep-text bg-calm-bg rounded-xl disabled:opacity-50">
+                Cancelar
+              </button>
+              <button
+                onClick={() => isRecording ? stopRecording() : startRecording()}
+                className={`flex-1 px-6 py-3 font-bold text-btn-text rounded-xl transition-colors ${
+                  isRecording ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-calm-blue hover:opacity-90'
+                }`}
+              >
+                {isRecording ? 'Terminar y guardar' : 'Grabar'}
+              </button>
+            </div>
+          )}
         </div>
       );
     }
@@ -409,92 +348,66 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
     return null;
   };
 
-  const renderResponseItem = (resp: ResponseItem, idx: number) => {
-      const isLargeFile = resp.content?.startsWith('[Archivo Grande]');
-      const canViewMedia = !isLargeFile && resp.content && (resp.content.startsWith('data:') || resp.content.startsWith('blob:'));
+  const renderResponseItem = (resp: ResponseItem) => {
+    const canViewMedia = !!(resp.content?.startsWith('data:') || resp.content?.startsWith('blob:'));
+    return (
+      <div key={resp.timestamp} className="bg-card-bg border border-soft-gray rounded-xl overflow-hidden mb-3 animate-fade-in shadow-sm">
+        <div className="p-4 flex gap-3 items-start">
+          <div className="p-2 bg-calm-bg rounded-full text-deep-text flex-shrink-0">
+            {resp.mode === ResponseMode.TEXT && <Type size={16} />}
+            {resp.mode === ResponseMode.AUDIO && <Mic size={16} />}
+            {resp.mode === ResponseMode.PHOTO && <Camera size={16} />}
+            {resp.mode === ResponseMode.VIDEO && <Video size={16} />}
+            {resp.mode === ResponseMode.SKIPPED && <SkipForward size={16} />}
+          </div>
 
-      return (
-        <div key={resp.timestamp} className="bg-card-bg border border-soft-gray rounded-xl overflow-hidden mb-3 animate-fade-in shadow-sm">
-            <div className="p-4 flex gap-3 items-start">
-                <div className="p-2 bg-calm-bg rounded-full text-deep-text flex-shrink-0">
-                    {resp.mode === ResponseMode.TEXT && <Type size={16} />}
-                    {resp.mode === ResponseMode.AUDIO && <Mic size={16} />}
-                    {resp.mode === ResponseMode.PHOTO && <Camera size={16} />}
-                    {resp.mode === ResponseMode.VIDEO && <Video size={16} />}
-                    {resp.mode === ResponseMode.SKIPPED && <SkipForward size={16} />}
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                    {/* TEXT CONTENT */}
-                    {resp.mode === ResponseMode.TEXT && (
-                        <p className="text-base text-deep-text whitespace-pre-wrap">{resp.content}</p>
-                    )}
+          <div className="flex-1 min-w-0">
+            {resp.mode === ResponseMode.TEXT && (
+              <p className="text-base text-deep-text whitespace-pre-wrap">{resp.content}</p>
+            )}
+            {resp.mode === ResponseMode.PHOTO && (
+              canViewMedia
+                ? <img src={resp.content!} alt="Respuesta" className="w-full max-w-xs rounded-lg border border-soft-gray" />
+                : <p className="text-sm italic opacity-70">{resp.content}</p>
+            )}
+            {resp.mode === ResponseMode.VIDEO && (
+              canViewMedia
+                ? <video src={resp.content!} controls className="w-full max-w-xs rounded-lg border border-soft-gray max-h-48" />
+                : <p className="text-sm italic opacity-70">{resp.content}</p>
+            )}
+            {resp.mode === ResponseMode.AUDIO && (
+              canViewMedia
+                ? <audio src={resp.content!} controls className="w-full max-w-xs h-10" />
+                : <p className="text-sm italic opacity-70">{resp.content}</p>
+            )}
+            {resp.mode === ResponseMode.SKIPPED && (
+              <p className="text-sm font-medium opacity-60 italic">Sin respuesta</p>
+            )}
+            <p className="text-xs opacity-40 mt-2">
+              {new Date(resp.timestamp).toLocaleDateString('es-CL')} · {new Date(resp.timestamp).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          </div>
 
-                    {/* PHOTO CONTENT */}
-                    {resp.mode === ResponseMode.PHOTO && (
-                        <div className="mt-1">
-                            {canViewMedia ? (
-                                <img src={resp.content!} alt="Respuesta" className="w-full max-w-xs rounded-lg border border-soft-gray" />
-                            ) : (
-                                <p className="text-sm italic opacity-70 flex items-center gap-2"><Camera size={12}/> {resp.content}</p>
-                            )}
-                        </div>
-                    )}
-
-                    {/* VIDEO CONTENT */}
-                    {resp.mode === ResponseMode.VIDEO && (
-                         <div className="mt-1">
-                            {canViewMedia ? (
-                                <video src={resp.content!} controls className="w-full max-w-xs rounded-lg border border-soft-gray max-h-48" />
-                            ) : (
-                                <p className="text-sm italic opacity-70 flex items-center gap-2"><Video size={12}/> {resp.content}</p>
-                            )}
-                        </div>
-                    )}
-                    
-                    {/* AUDIO CONTENT */}
-                    {resp.mode === ResponseMode.AUDIO && (
-                        <div className="mt-1">
-                             {canViewMedia ? (
-                                 <audio src={resp.content!} controls className="w-full max-w-xs h-10" />
-                             ) : (
-                                 <p className="text-sm italic opacity-70 flex items-center gap-2"><Mic size={12}/> {resp.content}</p>
-                             )}
-                        </div>
-                    )}
-
-                    {/* SKIPPED CONTENT */}
-                    {resp.mode === ResponseMode.SKIPPED && (
-                         <p className="text-sm font-medium opacity-80">{resp.content || "Sin contenido"}</p>
-                    )}
-
-                    <p className="text-xs opacity-50 mt-2">
-                        {new Date(resp.timestamp).toLocaleDateString()} • {new Date(resp.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                    </p>
-                </div>
-
-                {/* ACTIONS */}
-                <div className="flex flex-col gap-2">
-                    {resp.mode === ResponseMode.TEXT && (
-                        <button 
-                            onClick={() => handleEditClick(resp)}
-                            className="p-2 text-calm-blue hover:bg-calm-bg rounded-full"
-                            aria-label="Editar"
-                        >
-                            <Pencil size={18} />
-                        </button>
-                    )}
-                    <button 
-                        onClick={() => deleteResponse(resp.timestamp)}
-                        className="p-2 text-red-400 hover:bg-red-50 rounded-full"
-                        aria-label="Borrar"
-                    >
-                        <Trash2 size={18} />
-                    </button>
-                </div>
-            </div>
+          <div className="flex flex-col gap-2 flex-shrink-0">
+            {/* Editar — disponible para todos los tipos */}
+            <button
+              onClick={() => handleEditClick(resp)}
+              className="p-2 text-calm-blue hover:bg-calm-bg rounded-full"
+              aria-label="Editar o reemplazar"
+            >
+              <Pencil size={18} />
+            </button>
+            <button
+              onClick={() => deleteResponse(resp.timestamp)}
+              className="p-2 text-red-400 hover:bg-red-50 rounded-full"
+              aria-label="Borrar"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
         </div>
-      );
+      </div>
+    );
   };
 
   return (
@@ -504,72 +417,79 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
         <button onClick={onBack} className="p-2 -ml-2 text-deep-text rounded-full hover:bg-calm-bg">
           <ArrowLeft size={24} />
         </button>
-        <span className="text-sm font-semibold text-deep-text opacity-50 tracking-wide uppercase">Actividad</span>
-        <div className="w-10" /> {/* Spacer */}
+        <span className="text-xs font-semibold text-deep-text opacity-40 tracking-widest uppercase">Actividad</span>
+        <div className="w-10" />
       </div>
 
-      {/* Content */}
-      <div className="flex-1 p-6 max-w-lg mx-auto w-full pb-24">
+      {/* Contenido */}
+      <div className="flex-1 p-6 max-w-lg mx-auto w-full pb-28">
         <h1 className="text-2xl font-bold text-deep-text mb-4 leading-tight">{activity.title}</h1>
-        
+
+        {/* TAC badge */}
+        {activity.tacSubdimension && (
+          <span className="inline-block mb-4 text-xs font-semibold uppercase tracking-wider text-calm-blue bg-calm-blue/10 px-3 py-1 rounded-full">
+            {activity.tacSubdimension}
+          </span>
+        )}
+
+        {/* Descripción */}
         <div className="bg-card-bg p-6 rounded-2xl shadow-sm border-2 border-soft-gray mb-6">
           <p className="text-lg text-deep-text leading-relaxed mb-4">{activity.description}</p>
-          
           {activity.scaffoldExample && (
-            <div className="mt-4">
-               <button 
-                 onClick={() => setShowScaffold(!showScaffold)}
-                 className="flex items-center gap-2 text-sm font-semibold text-calm-blue hover:underline"
-               >
-                 <HelpCircle size={16} />
-                 {showScaffold ? 'Ocultar ejemplo' : 'Ver ejemplo de ayuda'}
-               </button>
-               {showScaffold && (
-                 <div className="mt-3 p-4 bg-calm-blue/10 text-deep-text rounded-xl text-sm italic border border-calm-blue/20">
-                   {activity.scaffoldExample}
-                 </div>
-               )}
+            <div className="mt-2">
+              <button
+                onClick={() => setShowScaffold(!showScaffold)}
+                className="flex items-center gap-2 text-sm font-semibold text-calm-blue hover:underline"
+              >
+                <HelpCircle size={16} />
+                {showScaffold ? 'Ocultar ejemplo' : 'Ver ejemplo'}
+              </button>
+              {showScaffold && (
+                <div className="mt-3 p-4 bg-calm-blue/10 text-deep-text rounded-xl text-sm italic border border-calm-blue/20">
+                  {activity.scaffoldExample}
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Existing Responses List */}
-        {activity.responses && activity.responses.length > 0 && (
-            <div className="mb-8">
-                <h3 className="text-sm font-bold text-deep-text opacity-40 uppercase tracking-wider mb-3">Tus Respuestas</h3>
-                <div className="space-y-2">
-                    {activity.responses.map((resp, idx) => renderResponseItem(resp, idx))}
-                </div>
-            </div>
-        )}
-
-        {!mode ? (
-            <>
-                <h3 className="text-sm font-bold text-deep-text opacity-40 uppercase tracking-wider mb-2">
-                    {activity.responses.length > 0 ? "Añadir más" : "Responder"}
-                </h3>
-                {renderModeSelector()}
-            </>
-        ) : (
-            <>
-                <h3 className="text-sm font-bold text-deep-text opacity-40 uppercase tracking-wider mb-2">
-                    {editingTimestamp ? "Editando respuesta" : "Nueva respuesta"}
-                </h3>
-                {renderActiveMode()}
-            </>
-        )}
-
-        {!mode && activity.responses.length === 0 && (
-          <div className="mt-12 text-center">
-             <button 
-               onClick={handleSkip}
-               className="flex items-center justify-center w-full gap-2 p-4 text-soft-gray hover:text-deep-text transition-colors"
-             >
-               <SkipForward size={20} />
-               <span className="font-medium">Prefiero saltar esta actividad hoy</span>
-             </button>
-             <p className="text-xs text-soft-gray mt-2">No hay respuestas incorrectas. Saltarla está bien.</p>
+        {/* Respuestas existentes */}
+        {activity.responses.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-xs font-bold text-deep-text opacity-40 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <MessageSquare size={12} /> Tus respuestas
+            </h3>
+            {activity.responses.map(renderResponseItem)}
           </div>
+        )}
+
+        {/* Selector de modo o modo activo */}
+        {!mode ? (
+          <>
+            <h3 className="text-xs font-bold text-deep-text opacity-40 uppercase tracking-wider mb-1">
+              {activity.responses.length > 0 ? 'Añadir más' : 'Responder'}
+            </h3>
+            {renderModeSelector()}
+
+            {/* Opción de salida — siempre disponible */}
+            <div className="mt-8 text-center">
+              <button
+                onClick={handleSkip}
+                className="flex items-center justify-center w-full gap-2 p-4 text-soft-gray hover:text-deep-text transition-colors"
+              >
+                <SkipForward size={18} />
+                <span className="font-medium text-sm">Esto no me ha pasado / prefiero no responder hoy</span>
+              </button>
+              <p className="text-xs text-soft-gray mt-1">No hay respuestas incorrectas.</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3 className="text-xs font-bold text-deep-text opacity-40 uppercase tracking-wider mb-2">
+              {editingTimestamp ? 'Reemplazar respuesta' : 'Nueva respuesta'}
+            </h3>
+            {renderActiveMode()}
+          </>
         )}
       </div>
     </div>

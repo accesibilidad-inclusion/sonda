@@ -3,8 +3,8 @@
 
 use "./participant.allium" as participant
 
--- Scope: Research content, weekly progression, activity responses, storage management
--- Includes: WeekModule, Activity, Response, unlocking schedule, study completion,
+-- Scope: Research content, momento progression, activity responses, storage management
+-- Includes: Moment, Activity, Response, working-day unlock schedule, study completion,
 --           storage budget enforcement and transparency
 -- Excludes:
 --   - Participant consent and identity (see participant.allium)
@@ -53,12 +53,13 @@ enum ResponseMode { text | audio | photo | video | skipped }
 -- Entities
 ------------------------------------------------------------
 
-entity WeekModule {
+entity Moment {
     participant: participant/Participant
     id: Integer
     title: String
     goal: String
     status: locked | available | completed
+    always_visible: Boolean
 
     transitions status {
         locked -> available
@@ -69,31 +70,33 @@ entity WeekModule {
     unlocked_at: Timestamp when status = available | completed
 
     -- Relationships
-    activities: Activity with module = this
+    activities: Activity with moment = this
 
     -- Derived
     completed_activities: activities where is_completed = true
     all_activities_done: completed_activities.count = activities.count
-    unlock_due_at: participant.consent?.accepted_at + (id - 1) * config.week_unlock_interval
+    unlock_due_at: add_working_days(participant.consent?.accepted_at, id - 1)
 
     invariant ValidId {
-        id >= 1 and id <= config.study_length_weeks
+        id >= 1 and id <= config.total_moments
     }
 }
 
 entity Activity {
-    module: WeekModule
+    moment: Moment
     id: String
     title: String
     description: String
     example: String?
+    allowed_modes: Set<ResponseMode>
+    tac_dimension: String?
+    tac_subdimension: String?
 
     -- Relationships
     responses: Response with activity = this
 
     -- Derived
-    substantive_responses: responses where mode != skipped
-    is_completed: substantive_responses.count > 0
+    is_completed: responses.count > 0
 }
 
 entity Response {
@@ -108,14 +111,18 @@ entity Response {
 ------------------------------------------------------------
 
 config {
-    week_unlock_interval: Duration = 7.days
-    study_length_weeks: Integer = 4
-    activities_per_week: Integer = 2
+    total_moments: Integer = 12
+    total_activities: Integer = 13
     developer_mode: Boolean = false
     storage_budget_bytes: Integer = 4_500_000
     storage_warning_threshold: Decimal = 0.8
     min_response_size_bytes: Integer = 50_000
 }
+
+-- total_moments: 12 momentos in the study. Momento 1 (Entrada) through
+-- Momento 11 (Control de las expectativas) plus Momento 12 (Cierre).
+-- total_activities: 13 activities delivered one per working day. Momento 1
+-- contains 2 activities; all other momentos contain 1. Total = 13.
 
 -- storage_budget_bytes: conservative cap of 4.5 MB. Safari on iOS enforces a
 -- 5 MB localStorage limit per origin; the remaining 0.5 MB covers structural data
@@ -131,81 +138,149 @@ config {
 rule StudyContentInitialized {
     when: p: participant/Participant.created
     ensures:
-        let m1 = WeekModule.created(participant: p, id: 1, status: locked, title: study_module_title(1), goal: study_module_goal(1))
-        let m2 = WeekModule.created(participant: p, id: 2, status: locked, title: study_module_title(2), goal: study_module_goal(2))
-        let m3 = WeekModule.created(participant: p, id: 3, status: locked, title: study_module_title(3), goal: study_module_goal(3))
-        let m4 = WeekModule.created(participant: p, id: 4, status: locked, title: study_module_title(4), goal: study_module_goal(4))
-        Activity.created(module: m1, id: "1.1", title: study_activity_title("1.1"), description: study_activity_description("1.1"), example: study_activity_example("1.1"))
-        Activity.created(module: m1, id: "1.2", title: study_activity_title("1.2"), description: study_activity_description("1.2"), example: study_activity_example("1.2"))
-        Activity.created(module: m2, id: "2.1", title: study_activity_title("2.1"), description: study_activity_description("2.1"), example: study_activity_example("2.1"))
-        Activity.created(module: m2, id: "2.2", title: study_activity_title("2.2"), description: study_activity_description("2.2"), example: study_activity_example("2.2"))
-        Activity.created(module: m3, id: "3.1", title: study_activity_title("3.1"), description: study_activity_description("3.1"), example: study_activity_example("3.1"))
-        Activity.created(module: m3, id: "3.2", title: study_activity_title("3.2"), description: study_activity_description("3.2"), example: study_activity_example("3.2"))
-        Activity.created(module: m4, id: "4.1", title: study_activity_title("4.1"), description: study_activity_description("4.1"), example: study_activity_example("4.1"))
-        Activity.created(module: m4, id: "4.2", title: study_activity_title("4.2"), description: study_activity_description("4.2"), example: study_activity_example("4.2"))
+        -- Momento 1 (Entrada): 2 activities — sensory baseline, no TAC dimension
+        let m1 = Moment.created(participant: p, id: 1, status: locked, always_visible: false, title: study_moment_title(1), goal: study_moment_goal(1))
+        Activity.created(moment: m1, id: "1.A", title: "Mapa de lugares", description: study_activity_description("1.A"), example: study_activity_example("1.A"), allowed_modes: {photo, text, audio}, tac_dimension: null, tac_subdimension: null)
+        Activity.created(moment: m1, id: "1.B", title: "Cazadores de ruido y luz", description: study_activity_description("1.B"), example: study_activity_example("1.B"), allowed_modes: {audio, photo, text}, tac_dimension: null, tac_subdimension: null)
+
+        -- Momento 2 — Autonomia (Volitiva)
+        let m2 = Moment.created(participant: p, id: 2, status: locked, always_visible: false, title: study_moment_title(2), goal: study_moment_goal(2))
+        Activity.created(moment: m2, id: "2.1", title: study_activity_title("2.1"), description: study_activity_description("2.1"), example: study_activity_example("2.1"), allowed_modes: {text, audio, photo}, tac_dimension: "Volitiva", tac_subdimension: "Autonomia")
+
+        -- Momento 3 — Autoiniciacion (Volitiva)
+        let m3 = Moment.created(participant: p, id: 3, status: locked, always_visible: false, title: study_moment_title(3), goal: study_moment_goal(3))
+        Activity.created(moment: m3, id: "3.1", title: study_activity_title("3.1"), description: study_activity_description("3.1"), example: study_activity_example("3.1"), allowed_modes: {text, audio}, tac_dimension: "Volitiva", tac_subdimension: "Autoiniciacion")
+
+        -- Momento 4 — Control inhibitorio (Volitiva)
+        let m4 = Moment.created(participant: p, id: 4, status: locked, always_visible: false, title: study_moment_title(4), goal: study_moment_goal(4))
+        Activity.created(moment: m4, id: "4.1", title: study_activity_title("4.1"), description: study_activity_description("4.1"), example: study_activity_example("4.1"), allowed_modes: {text, audio}, tac_dimension: "Volitiva", tac_subdimension: "Control inhibitorio")
+
+        -- Momento 5 — Autodireccion (Agencial)
+        let m5 = Moment.created(participant: p, id: 5, status: locked, always_visible: false, title: study_moment_title(5), goal: study_moment_goal(5))
+        Activity.created(moment: m5, id: "5.1", title: study_activity_title("5.1"), description: study_activity_description("5.1"), example: study_activity_example("5.1"), allowed_modes: {text, audio, photo}, tac_dimension: "Agencial", tac_subdimension: "Autodireccion")
+
+        -- Momento 6 — Autorregulacion (Agencial)
+        let m6 = Moment.created(participant: p, id: 6, status: locked, always_visible: false, title: study_moment_title(6), goal: study_moment_goal(6))
+        Activity.created(moment: m6, id: "6.1", title: study_activity_title("6.1"), description: study_activity_description("6.1"), example: study_activity_example("6.1"), allowed_modes: {photo, audio, text}, tac_dimension: "Agencial", tac_subdimension: "Autorregulacion")
+
+        -- Momento 7 — Pensar en alternativas (Agencial)
+        let m7 = Moment.created(participant: p, id: 7, status: locked, always_visible: false, title: study_moment_title(7), goal: study_moment_goal(7))
+        Activity.created(moment: m7, id: "7.1", title: study_activity_title("7.1"), description: study_activity_description("7.1"), example: study_activity_example("7.1"), allowed_modes: {text, audio}, tac_dimension: "Agencial", tac_subdimension: "Pensar en alternativas")
+
+        -- Momento 8 — Flexibilidad cognitiva (Agencial)
+        let m8 = Moment.created(participant: p, id: 8, status: locked, always_visible: false, title: study_moment_title(8), goal: study_moment_goal(8))
+        Activity.created(moment: m8, id: "8.1", title: study_activity_title("8.1"), description: study_activity_description("8.1"), example: study_activity_example("8.1"), allowed_modes: {text, audio}, tac_dimension: "Agencial", tac_subdimension: "Flexibilidad cognitiva")
+
+        -- Momento 9 — Empoderamiento (Creencias de control-accion)
+        let m9 = Moment.created(participant: p, id: 9, status: locked, always_visible: false, title: study_moment_title(9), goal: study_moment_goal(9))
+        Activity.created(moment: m9, id: "9.1", title: study_activity_title("9.1"), description: study_activity_description("9.1"), example: study_activity_example("9.1"), allowed_modes: {text, audio}, tac_dimension: "Creencias de control-accion", tac_subdimension: "Empoderamiento")
+
+        -- Momento 10 — Autorrealizacion / Autoconcepto (Creencias de control-accion)
+        let m10 = Moment.created(participant: p, id: 10, status: locked, always_visible: false, title: study_moment_title(10), goal: study_moment_goal(10))
+        Activity.created(moment: m10, id: "10.1", title: study_activity_title("10.1"), description: study_activity_description("10.1"), example: study_activity_example("10.1"), allowed_modes: {text, audio}, tac_dimension: "Creencias de control-accion", tac_subdimension: "Autorrealizacion / Autoconcepto")
+
+        -- Momento 11 — Control de las expectativas (Creencias de control-accion)
+        let m11 = Moment.created(participant: p, id: 11, status: locked, always_visible: false, title: study_moment_title(11), goal: study_moment_goal(11))
+        Activity.created(moment: m11, id: "11.1", title: study_activity_title("11.1"), description: study_activity_description("11.1"), example: study_activity_example("11.1"), allowed_modes: {text, audio, video}, tac_dimension: "Creencias de control-accion", tac_subdimension: "Control de las expectativas")
+
+        -- Momento 12 (Cierre): always visible, optional, repeatable
+        let m12 = Moment.created(participant: p, id: 12, status: locked, always_visible: true, title: "Cierre", goal: study_moment_goal(12))
+        Activity.created(moment: m12, id: "12.1", title: "Mensaje al futuro", description: study_activity_description("12.1"), example: study_activity_example("12.1"), allowed_modes: {audio, video, text}, tac_dimension: null, tac_subdimension: null)
 
     @guidance
         -- Titles, goals, descriptions, and examples are resolved from static study
         -- configuration (not participant-generated). They are fixed at study design
-        -- time. The black box functions study_module_title, study_activity_title, etc.
+        -- time. The black box functions study_moment_title, study_activity_title, etc.
         -- represent lookups into that configuration.
+        -- Activity IDs use the format "M.X" where M is the momento number and X is
+        -- the activity letter or number within that momento.
+        -- Momento 1 (Entrada) is the only momento with 2 activities. All others have 1.
+        -- The 13 activities map to 13 working days (one per day, Monday-Friday).
 }
 
--- Week unlocking — production schedule (time-based, relative to consent date)
+-- Momento unlocking — production schedule (working-day cadence relative to consent date)
 
-rule WeekModuleUnlocks {
-    when: module: WeekModule.unlock_due_at <= now
-    requires: module.status = locked
+rule MomentUnlocks {
+    when: moment: Moment.unlock_due_at <= now
+    requires: moment.status = locked
+    requires: not moment.always_visible
     requires: not config.developer_mode
     ensures:
-        module.status = available
-        module.unlocked_at = now
+        moment.status = available
+        moment.unlocked_at = now
 
     @guidance
-        -- Week 1: unlocks immediately after consent (offset = 0 days).
-        -- Week 2: unlocks 7 days after consent.
-        -- Week 3: unlocks 14 days after consent.
-        -- Week 4: unlocks 21 days after consent.
+        -- Momento 1: unlocks immediately after consent (0 working days offset).
+        -- Momento N: unlocks after N-1 working days from consent date.
+        -- Working days are Monday-Friday; weekends are skipped.
         -- unlock_due_at is null before consent exists, so this rule does not
         -- fire before the participant has accepted consent.
+        -- add_working_days(date, n) is a deferred black-box function that computes
+        -- the date N working days after the given date, skipping Saturday and Sunday.
 }
 
--- Week unlocking — developer mode (all weeks immediately available on consent)
+-- Cierre (Momento 12) unlocking — always visible from consent
 
-rule AllWeeksUnlockedForDeveloper {
+rule CierreUnlockedOnConsent {
+    when: consent: participant/ConsentRecord.created
+    requires: not config.developer_mode
+    let cierre = Moment{participant: consent.participant, id: 12}
+    requires: exists cierre
+    requires: cierre.status = locked
+    ensures:
+        cierre.status = available
+        cierre.unlocked_at = now
+
+    @guidance
+        -- The Cierre momento is always visible from the start, positioned at the
+        -- bottom of the dashboard. It is optional (not required for any completion
+        -- state) and can be responded to multiple times. Its always_visible flag
+        -- distinguishes it from other momentos in the UI.
+}
+
+-- Momento unlocking — developer mode (all momentos immediately available on consent)
+
+rule AllMomentsUnlockedForDeveloper {
     when: consent: participant/ConsentRecord.created
     requires: config.developer_mode
     ensures:
-        for module in WeekModules where participant = consent.participant:
-            module.status = available
-            module.unlocked_at = now
+        for moment in Moments where participant = consent.participant:
+            moment.status = available
+            moment.unlocked_at = now
 }
 
--- Activity and module completion
+-- Developer mode toggle (unlocks all locked momentos for the participant)
 
-rule WeekModuleCompleted {
+rule DeveloperModeActivated {
+    when: ToggleDeveloperMode(p)
+    ensures:
+        for moment in Moments where participant = p and status = locked:
+            moment.status = available
+            moment.unlocked_at = now
+
+    @guidance
+        -- When developer mode is activated via the hidden /sonda/dev panel,
+        -- all locked momentos become immediately available regardless of the
+        -- working-day schedule. Already-unlocked momentos are unaffected.
+        -- This is a development/testing facility only.
+}
+
+-- Activity and momento completion
+
+rule MomentCompleted {
     when: activity: Activity.is_completed
-    let module = activity.module
-    requires: module.status = available
-    requires: module.all_activities_done
-    ensures: module.status = completed
-}
-
-rule StudyCompleted {
-    when: module: WeekModule.status transitions_to completed
-    let p = module.participant
-    let all_weeks = WeekModules where participant = p
-    requires: p.status = active
-    requires: all_weeks.all(w => w.status = completed)
-    ensures: p.status = completed
+    let moment = activity.moment
+    requires: moment.status = available
+    requires: moment.all_activities_done
+    ensures: moment.status = completed
 }
 
 -- Response collection
 
 rule ResponseAdded {
     when: ParticipantAddsResponse(activity, mode, content)
-    let storage = storage_status(activity.module.participant)
-    requires: activity.module.status = available
+    let storage = storage_status(activity.moment.participant)
+    requires: activity.moment.status = available
     requires: estimated_size(content) <= storage.available_bytes
     ensures:
         Response.created(
@@ -215,10 +290,10 @@ rule ResponseAdded {
             captured_at: now
         )
         if storage.usage_fraction >= config.storage_warning_threshold:
-            StorageNearingLimit(activity.module.participant, storage)
+            StorageNearingLimit(activity.moment.participant, storage)
 
     @guidance
-        -- content for media responses is the compressed representation —
+        -- content for media responses is the compressed representation --
         -- audio at 16 kHz mono Opus, images resized to at most 1000 px at 80 %
         -- JPEG quality, video at at most 720 p with a 30-second cap.
         -- Compression is applied before this trigger is invoked, so
@@ -228,12 +303,26 @@ rule ResponseAdded {
         -- If the requires clause fails (content does not fit), the participant
         -- is shown a clear explanation and directed to export or remove older
         -- responses to free space. The response is not silently discarded.
+        -- A response with mode = skipped represents an explicit "sin respuesta"
+        -- (exit option). Every activity has this option universally available.
+        -- The participant chooses "esto no me paso" and it counts as a substantive
+        -- response for completion purposes.
 }
 
-rule TextResponseEdited {
-    when: ParticipantEditsTextResponse(response, new_content)
-    requires: response.mode = text
-    ensures: response.content = new_content
+rule ResponseReplaced {
+    when: ParticipantReplacesResponse(response, new_mode, new_content)
+    let storage = storage_status(response.activity.moment.participant)
+    requires: estimated_size(new_content) - estimated_size(response.content) <= storage.available_bytes
+    ensures:
+        response.mode = new_mode
+        response.content = new_content
+        response.captured_at = now
+
+    @guidance
+        -- The participant has full control over their responses at any time.
+        -- They can replace any response (text, audio, photo, video, skipped)
+        -- with a new one of any mode. The storage check accounts for the net
+        -- change in size (new content minus old content).
 }
 
 rule ResponseRemoved {
@@ -247,27 +336,32 @@ rule ResponseRemoved {
 
 invariant ResponsesRequireConsent {
     for r in Responses:
-        r.activity.module.participant.has_consented
+        r.activity.moment.participant.has_consented
 }
 
 invariant AudioRequiresMicrophone {
     for r in Responses:
-        r.mode = audio implies r.activity.module.participant.microphone_granted
+        r.mode = audio implies r.activity.moment.participant.microphone_granted
 }
 
 invariant PhotoOrVideoRequiresCamera {
     for r in Responses:
-        r.mode in {photo, video} implies r.activity.module.participant.camera_granted
+        r.mode in {photo, video} implies r.activity.moment.participant.camera_granted
 }
 
-invariant LockedModulesHaveNoResponses {
-    for m in WeekModules:
+invariant LockedMomentsHaveNoResponses {
+    for m in Moments:
         m.status = locked implies m.activities.all(a => a.responses.count = 0)
 }
 
-invariant CompletedActivityHasSubstantiveResponse {
+invariant CompletedActivityHasResponse {
     for a in Activities:
-        a.is_completed implies a.substantive_responses.count > 0
+        a.is_completed implies a.responses.count > 0
+}
+
+invariant ResponseModeAllowed {
+    for r in Responses:
+        r.mode = skipped or r.mode in r.activity.allowed_modes
 }
 
 ------------------------------------------------------------
@@ -285,41 +379,46 @@ actor StudyParticipant {
 surface StudyDashboard {
     facing viewer: StudyParticipant
 
-    let weeks = WeekModules where participant = viewer
+    let moments = Moments where participant = viewer
     let storage = storage_status(viewer)
 
     exposes:
-        for module in weeks:
-            module.id
-            module.title
-            module.status
-            module.unlocked_at
-            module.unlock_due_at
-            module.completed_activities.count
-            module.activities.count
+        for moment in moments:
+            moment.id
+            moment.title
+            moment.status
+            moment.always_visible
+            moment.unlocked_at
+            moment.unlock_due_at
+            moment.completed_activities.count
+            moment.activities.count
         storage.used_bytes
         storage.budget_bytes
         storage.available_bytes
         storage.usage_fraction
 
     related:
-        for module in weeks where module.status = available:
-            for activity in module.activities:
+        for moment in moments where moment.status = available:
+            for activity in moment.activities:
                 ActivityView(activity)
 
     @guidance
-        -- Locked modules display the expected unlock date (unlock_due_at) so the
-        -- participant knows when new content becomes available, reducing anxiety
+        -- Locked momentos display the expected unlock date (unlock_due_at) so the
+        -- participant knows when new content becomes available. The UI can show
+        -- "La siguiente actividad estara disponible el: [fecha]" to reduce anxiety
         -- about a seemingly "broken" or incomplete app.
-        -- Completed modules remain visible but read-only.
+        -- Completed momentos remain visible but read-only.
         -- A storage indicator at the dashboard level gives the participant a global
         -- view of how much space their data occupies. This is especially relevant
         -- after adding photo or video responses.
+        -- The Cierre momento (always_visible = true) is positioned at the bottom
+        -- of the dashboard and is accessible from the start. It is optional and
+        -- does not count toward any completion gate.
 }
 
 surface ActivityView {
     facing viewer: StudyParticipant
-    context activity: Activity where activity.module.participant = viewer
+    context activity: Activity where activity.moment.participant = viewer
 
     let storage = storage_status(viewer)
 
@@ -327,6 +426,9 @@ surface ActivityView {
         activity.title
         activity.description
         activity.example
+        activity.allowed_modes
+        activity.tac_dimension
+        activity.tac_subdimension
         activity.is_completed
         activity.responses
         viewer.camera_granted
@@ -338,10 +440,10 @@ surface ActivityView {
 
     provides:
         ParticipantAddsResponse(activity, mode, content)
-            when activity.module.status = available
+            when activity.moment.status = available
             and storage.available_bytes >= config.min_response_size_bytes
-        ParticipantEditsTextResponse(response, new_content)
-            when response in activity.responses and response.mode = text
+        ParticipantReplacesResponse(response, new_mode, new_content)
+            when response in activity.responses
         ParticipantConfirmsDeleteResponse(response)
             when response in activity.responses
 
@@ -349,14 +451,22 @@ surface ActivityView {
         fulfils StorageSafety
 
     @guarantee ResponseModesReflectPermissions
-        -- Only response modes whose required permissions have been granted are
-        -- offered. Unavailable modes are explained with the reason, so the
-        -- participant understands they can still grant the permission later
-        -- (if the device allows it) or use an alternative mode.
+        -- Response modes whose required permissions have not been granted are shown
+        -- but disabled, with an in-context affordance to grant the permission.
+        -- The explanation is contextual: it explains why the permission is needed
+        -- for this specific activity (e.g., "Para grabar tu respuesta de audio,
+        -- necesitamos acceso al microfono") rather than using a generic message.
+        -- The participant understands they can grant the permission and then use
+        -- the mode, or choose an alternative mode that does not require it.
     @guarantee StorageVisibleDuringCapture
         -- The participant can always see their current storage usage (used and
         -- available bytes, or a visual equivalent) while in the activity view,
         -- both before initiating a response and after each response is added.
+    @guarantee ExitOptionAlwaysAvailable
+        -- Every activity offers a "sin respuesta" exit option. When used, it
+        -- creates a Response with mode = skipped. This counts as a valid response
+        -- for completion purposes. The exit option is universally available across
+        -- all activities and is never hidden or disabled.
     @guidance
         -- When storage.available_bytes < config.min_response_size_bytes, all
         -- response modes are disabled. The participant is shown a plain-language
@@ -368,26 +478,49 @@ surface ActivityView {
         -- response to reduce ambiguity about what is being asked. It is shown
         -- alongside the question description, never as a replacement.
         -- Deleting a response requires an explicit confirmation step (see data-sovereignty.allium).
+        -- The allowed_modes field determines which response modes are offered for
+        -- this activity. Modes not in allowed_modes are not shown (except skipped,
+        -- which is always available via the exit option).
+}
+
+surface DevPanel {
+    facing viewer: StudyParticipant
+
+    exposes:
+        config.developer_mode
+
+    provides:
+        ToggleDeveloperMode(viewer)
+
+    @guidance
+        -- Accessible only at /sonda/dev -- not linked from any navigation.
+        -- Exposes the developer_mode toggle.
+        -- When developer_mode = true, all momentos are immediately available
+        -- regardless of the working-day unlock schedule.
+        -- This surface exists for development and testing purposes only.
+        -- It must not be discoverable through normal application navigation.
 }
 
 ------------------------------------------------------------
 -- Deferred Specifications
 ------------------------------------------------------------
 
-deferred study_module_title          -- black box: looks up module title by week id
-deferred study_module_goal           -- black box: looks up module goal by week id
+deferred study_moment_title          -- black box: looks up momento title by momento id
+deferred study_moment_goal           -- black box: looks up momento goal by momento id
 deferred study_activity_title        -- black box: looks up activity title by activity id
 deferred study_activity_description  -- black box: looks up activity description by activity id
 deferred study_activity_example      -- black box: looks up optional scaffold example by activity id
 deferred storage_status              -- black box: returns StorageStatus for a participant (measures all persisted data)
 deferred estimated_size              -- black box: returns byte count of a response content value
+deferred add_working_days            -- black box: returns a date N working days (Mon-Fri) after a given date
 
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
 
-open question "Should responses in a completed module remain editable, or become read-only once the module transitions to completed?"
+open question "Should responses in a completed momento remain editable, or become read-only once the momento transitions to completed?"
 open question "Is there a maximum response count per activity, or is the collection unbounded?"
 open question "Is 0.8 (80 %) the right warning threshold for storage, or should it be adjusted based on participant feedback? A very storage-conscious participant might want to be warned earlier."
 open question "When storage is exhausted, should the app proactively prompt the participant to export and clear data, or only display a passive explanation?"
-open question "Should the participant be able to re-lock a module (e.g., to redo it)? Currently the model treats completion as terminal."
+open question "With nothing mandatory and no expiry, what triggers Participant.status = completed? Options: (a) participant explicitly submits/exports data, (b) all momentos have at least one response of any kind, (c) remove the completed status entirely."
+open question "When a participant adds a new response of the same mode to an activity that already has a response in that mode, does the new response replace the old one or supplement it? This matters especially for audio and photo responses where replacement vs. accumulation changes the storage profile."

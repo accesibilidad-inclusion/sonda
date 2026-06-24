@@ -1,12 +1,15 @@
 
 export enum AppScreen {
-  ONBOARDING_WELCOME = 'ONBOARDING_WELCOME',
+  // Contexto navegador
   ONBOARDING_CONSENT = 'ONBOARDING_CONSENT',
-  ONBOARDING_TUTORIAL = 'ONBOARDING_TUTORIAL',
+  ONBOARDING_INSTALL = 'ONBOARDING_INSTALL',
+  // Contexto PWA
+  ONBOARDING_WELCOME = 'ONBOARDING_WELCOME',
+  ONBOARDING_PERMISSIONS = 'ONBOARDING_PERMISSIONS',
+  // App principal
   DASHBOARD = 'DASHBOARD',
   ACTIVITY_VIEW = 'ACTIVITY_VIEW',
-  FIDGET_MODE = 'FIDGET_MODE',
-  COMPLETION = 'COMPLETION'
+  DEV_PANEL = 'DEV_PANEL',
 }
 
 export enum ResponseMode {
@@ -19,7 +22,7 @@ export enum ResponseMode {
 
 export interface ResponseItem {
   mode: ResponseMode;
-  content: string | null; // Text content or Base64/URL for media
+  content: string | null; // Texto o Base64/URL para media
   timestamp: number;
 }
 
@@ -27,27 +30,30 @@ export interface Activity {
   id: string;
   title: string;
   description: string;
-  scaffoldExample?: string; // "Andamiaje"
-  isCompleted: boolean;
-  responses: ResponseItem[]; // Changed from single response to array
+  scaffoldExample?: string;
+  allowedModes: ResponseMode[];   // Modalidades habilitadas para esta actividad
+  tacDimension: string | null;    // Dimensión TAC (Volitiva / Agencial / Creencias de control-acción)
+  tacSubdimension: string | null; // Subdimensión TAC (Autonomía, Autorregulación, etc.)
+  isCompleted: boolean;           // true si responses.length > 0 (incluye SKIPPED)
+  responses: ResponseItem[];
 }
 
-export interface WeekModule {
+export interface Moment {
   id: number;
   title: string;
   goal: string;
   isLocked: boolean;
+  alwaysVisible: boolean; // true solo para el Cierre (Momento 12)
   activities: Activity[];
 }
 
 export interface FidgetSession {
-  startTime: string; // ISO 8601 timestamp when user started the fidget
-  durationSeconds: number; // Length of the session in seconds
-  shots: number; // Number of times the ball was released from the slingshot
-  drags: number; // Number of times the ball was grabbed/dragged
+  startTime: string;
+  durationSeconds: number;
+  shots: number;
+  drags: number;
 }
 
-// Sensory Profile Types
 export type ThemeType = 'default' | 'high-contrast' | 'warm';
 export type FontSizeType = 'normal' | 'large' | 'extra';
 export type SoundType = 'off' | 'white' | 'pink' | 'brown';
@@ -58,5 +64,5 @@ export interface SensoryProfile {
   reducedMotion: boolean;
   dyslexiaFont: boolean;
   sound: SoundType;
-  soundVolume: number; // 0 to 1
+  soundVolume: number;
 }

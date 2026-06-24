@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { X, RefreshCw } from 'lucide-react';
-import { IS_DEVELOPER_MODE } from '../constants';
+import { storageService } from '../services/storageService';
 import Matter from 'matter-js';
 
 interface FidgetToolProps {
@@ -30,6 +30,7 @@ const FidgetTool: React.FC<FidgetToolProps> = ({ onClose, reducedMotion = false 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const towerBodiesRef = useRef<Matter.Body[]>([]);
 
+  const IS_DEVELOPER_MODE = storageService.isDevMode();
   const colors = ['#E94B91', '#03A9F5', '#00BCD4', '#FFA500', '#FFEB3B', '#8BC34A'];
 
   useEffect(() => {

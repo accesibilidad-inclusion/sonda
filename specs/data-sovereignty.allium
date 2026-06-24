@@ -12,7 +12,7 @@ use "./wellbeing.allium" as wellbeing
 --   - Research content and responses (see research.allium)
 --   - Wellbeing tools (see wellbeing.allium)
 -- Dependencies: Participant, ConsentRecord from participant.allium
---               WeekModule, Activity, Response from research.allium
+--               Moment, Activity, Response from research.allium
 --               FidgetSession from wellbeing.allium
 
 -- Core principle: The participant's data belongs to the participant.
@@ -39,7 +39,7 @@ contract DataSovereignty {
         -- confirmation from the participant in the same session.
 
     @invariant DeletionAlwaysConfirmed
-        -- No response, module record, or participant data is deleted without
+        -- No response, momento record, or participant data is deleted without
         -- a preceding explicit confirmation from the participant.
 
     @invariant IrreversibilityMadeExplicit
@@ -55,8 +55,13 @@ contract DataSovereignty {
 
 rule DataExportRequested {
     when: ParticipantRequestsExport(p)
-    requires: p.status = active
+    requires: p.status in {active, completed}
     ensures: ExportConfirmationPending(p)
+
+    @guidance
+        -- Data export is always available once the participant is active,
+        -- regardless of study progression. Partial responses can be exported.
+        -- Export is not gated on study completion.
 }
 
 rule DataExportConfirmed {
@@ -73,7 +78,7 @@ rule DataExportConfirmed {
         -- ensures the participant is aware that data is being sent.
         --
         -- The exported payload includes:
-        --   progress (all week modules, activities, responses with content),
+        --   progress (all momentos, activities, responses with content),
         --   sensory_profile,
         --   fidget session logs (started_at, duration, shots, drags),
         --   consent timestamp,
@@ -120,12 +125,12 @@ rule ClearAllDataRequested {
 rule ClearAllDataConfirmed {
     when: ParticipantConfirmsClearAllData(p)
     ensures:
-        for response in research/Responses where response.activity.module.participant = p:
+        for response in research/Responses where response.activity.moment.participant = p:
             not exists response
-        for activity in research/Activities where activity.module.participant = p:
+        for activity in research/Activities where activity.moment.participant = p:
             not exists activity
-        for module in research/WeekModules where module.participant = p:
-            not exists module
+        for moment in research/Moments where moment.participant = p:
+            not exists moment
         for session in wellbeing/FidgetSessions where session.participant = p:
             not exists session
         not exists p.consent
@@ -152,7 +157,7 @@ rule ClearAllDataCancelled {
 
 invariant ExportRequiresConsentedParticipant {
     for p in participant/Participants:
-        p.status = active implies p.has_consented
+        p.status in {active, completed} implies p.has_consented
 }
 
 ------------------------------------------------------------
@@ -160,7 +165,7 @@ invariant ExportRequiresConsentedParticipant {
 ------------------------------------------------------------
 
 actor DataOwner {
-    identified_by: participant/Participant where status = active
+    identified_by: participant/Participant where status in {active, completed}
 }
 
 ------------------------------------------------------------
@@ -195,7 +200,7 @@ surface DataManagementPanel {
 
 surface ResponseDeletionConfirmation {
     facing owner: DataOwner
-    context response: research/Response where response.activity.module.participant = owner
+    context response: research/Response where response.activity.moment.participant = owner
 
     exposes:
         response.mode

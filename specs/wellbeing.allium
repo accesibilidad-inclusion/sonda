@@ -121,7 +121,7 @@ surface FidgetToolView {
 
     @guarantee AlwaysAccessible
         -- The fidget tool is available at any point during the active study,
-        -- regardless of research progress or which modules are unlocked.
+        -- regardless of research progress or which momentos are unlocked.
         -- It does not gate on, or affect, research progression.
     @guidance
         -- The tool uses a physics simulation with interactive objects (blocks and a
