@@ -29,7 +29,7 @@ const InstallScreen: React.FC = () => {
         {!installed ? (
           <>
             <h1 className="text-3xl font-black text-deep-text mb-4 tracking-tight">
-              Un paso más
+              Comencemos
             </h1>
             <p className="text-lg text-deep-text opacity-80 leading-relaxed mb-10 max-w-sm">
               Para usar la sonda, instala la aplicación en tu pantalla de inicio. Así podrás acceder a ella como una app normal, sin abrir el navegador.
