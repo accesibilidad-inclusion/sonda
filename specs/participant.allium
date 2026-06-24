@@ -48,6 +48,7 @@ entity Participant {
     -- Onboarding tracking (PWA context)
     has_seen_welcome: Boolean
     has_seen_permissions_screen: Boolean
+    fidget_intro_seen: Boolean
 
     -- Relationships
     consent: ConsentRecord with participant = this
@@ -57,7 +58,7 @@ entity Participant {
     has_consented: consent != null
     camera_granted: permissions.any(p => p.kind = camera and p.status = granted)
     microphone_granted: permissions.any(p => p.kind = microphone and p.status = granted)
-    onboarding_complete: has_consented and has_seen_welcome and has_seen_permissions_screen
+    onboarding_complete: has_consented and has_seen_welcome and has_seen_permissions_screen and fidget_intro_seen
 
     invariant ValidNoiseVolume {
         sensory_profile.noise_volume >= 0.0 and sensory_profile.noise_volume <= 1.0
@@ -113,6 +114,7 @@ rule ParticipantInitialized {
             status: unstarted,
             has_seen_welcome: false,
             has_seen_permissions_screen: false,
+            fidget_intro_seen: false,
             sensory_profile: {
                 theme: calm,
                 font_size: normal,
@@ -144,16 +146,21 @@ rule LaunchRouter {
             RouteToScreen(screen: welcome)
         else if not p.has_seen_permissions_screen:
             RouteToScreen(screen: permissions)
+        else if not p.fidget_intro_seen:
+            RouteToScreen(screen: fidget_intro)
         else:
             RouteToScreen(screen: dashboard)
 
     @guidance
         -- The ConsentScreen and InstallScreen belong to the browser context
-        -- (before PWA installation). WelcomeScreen, PermissionsScreen and
-        -- StudyDashboard belong to the PWA context (opened from home screen icon).
+        -- (before PWA installation). WelcomeScreen, PermissionsScreen,
+        -- FidgetIntroductionView and StudyDashboard belong to the PWA context
+        -- (opened from home screen icon).
         -- The router does not enforce context boundaries; it routes based on state.
         -- A participant who has consented but not yet installed the PWA will see
         -- the InstallScreen, which is handled within ConsentScreen's post-accept flow.
+        -- The FidgetIntroductionView is shown exactly once, between the
+        -- PermissionsScreen and the StudyDashboard, during PWA onboarding.
 }
 
 -- Consent (browser context)
@@ -246,9 +253,10 @@ rule ParticipantSeesPermissionsScreen {
         participant.status = active
 
     @guidance
-        -- This is the final onboarding step. Regardless of whether permissions
-        -- were granted or skipped, completing this screen transitions the
-        -- participant to active status and routes to the StudyDashboard.
+        -- Regardless of whether permissions were granted or skipped, completing
+        -- this screen transitions the participant to active status. The
+        -- LaunchRouter then routes to the FidgetIntroductionView (the next
+        -- onboarding step) before reaching the StudyDashboard.
 }
 
 -- Sensory preferences (adjustable at any time during consented or active phases)
@@ -292,7 +300,7 @@ invariant WelcomePrecedesPermissionsScreen {
 
 invariant OnboardingPrecedesActive {
     for p in Participants:
-        p.status = active implies p.onboarding_complete
+        p.status = active implies p.has_consented and p.has_seen_welcome and p.has_seen_permissions_screen
 }
 
 ------------------------------------------------------------
@@ -410,8 +418,8 @@ surface PermissionsScreen {
     @guidance
         -- Second screen shown inside the PWA, immediately after WelcomeScreen.
         -- Regardless of whether the participant grants, denies, or skips permissions,
-        -- completing this screen transitions the participant to active status and
-        -- routes to the StudyDashboard.
+        -- completing this screen transitions the participant to active status.
+        -- The FidgetIntroductionView follows before the StudyDashboard.
 }
 
 surface SensorySettingsPanel {

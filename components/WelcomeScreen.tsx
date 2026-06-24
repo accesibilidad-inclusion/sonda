@@ -8,7 +8,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNext }) => (
   <div className="flex flex-col min-h-screen bg-calm-bg p-8">
     <div className="flex-1 flex flex-col items-center justify-center text-center">
       <img
-        src="/au.png"
+        src={`${import.meta.env.BASE_URL}au.png`}
         alt="Sonda Digital"
         className="w-28 h-28 mb-10 object-contain drop-shadow-xl hover:scale-105 transition-transform duration-700"
       />

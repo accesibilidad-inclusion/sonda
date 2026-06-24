@@ -8,6 +8,7 @@ const KEYS = {
   START_DATE: 'sonda_start_date',
   SEEN_WELCOME: 'sonda_seen_welcome',
   SEEN_PERMISSIONS: 'sonda_seen_permissions',
+  SEEN_FIDGET: 'sonda_seen_fidget',
   DEV_MODE: 'sonda_dev_mode',
   // Claves antiguas para migración
   LEGACY_PROGRESS: 'neuroprobe_progress',
@@ -103,6 +104,14 @@ export const storageService = {
 
   hasSeenPermissions: (): boolean => {
     return localStorage.getItem(KEYS.SEEN_PERMISSIONS) === 'true';
+  },
+
+  markFidgetIntroSeen: () => {
+    localStorage.setItem(KEYS.SEEN_FIDGET, 'true');
+  },
+
+  hasSeenFidgetIntro: (): boolean => {
+    return localStorage.getItem(KEYS.SEEN_FIDGET) === 'true';
   },
 
   // --- Modo desarrollador ---

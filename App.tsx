@@ -9,6 +9,7 @@ import ConsentScreen from './components/ConsentScreen';
 import InstallScreen from './components/InstallScreen';
 import WelcomeScreen from './components/WelcomeScreen';
 import PermissionsScreen from './components/PermissionsScreen';
+import FidgetIntroScreen from './components/FidgetIntroScreen';
 import DevPanel from './components/DevPanel';
 import { audioService } from './services/audioService';
 import { storageService } from './services/storageService';
@@ -51,6 +52,7 @@ function getInitialScreen(): AppScreen {
 
   if (!storageService.hasSeenWelcome()) return AppScreen.ONBOARDING_WELCOME;
   if (!storageService.hasSeenPermissions()) return AppScreen.ONBOARDING_PERMISSIONS;
+  if (!storageService.hasSeenFidgetIntro()) return AppScreen.ONBOARDING_FIDGET;
   return AppScreen.DASHBOARD;
 }
 
@@ -121,6 +123,11 @@ const App = () => {
 
   const handlePermissionsDone = () => {
     storageService.markPermissionsSeen();
+    setScreen(AppScreen.ONBOARDING_FIDGET);
+  };
+
+  const handleFidgetIntroDone = () => {
+    storageService.markFidgetIntroSeen();
     setScreen(AppScreen.DASHBOARD);
   };
 
@@ -260,7 +267,7 @@ const App = () => {
                 {isDevMode && <span className="ml-2 text-xs bg-red-500 text-white px-2 py-0.5 rounded">DEV</span>}
               </p>
             </div>
-            <img src="/au.png" alt="" className="w-10 h-10 opacity-60 object-contain" />
+            <img src={`${import.meta.env.BASE_URL}au.png`} alt="" className="w-10 h-10 opacity-60 object-contain" />
           </div>
 
           {/* Próxima actividad */}
@@ -315,7 +322,7 @@ const App = () => {
       {screen === AppScreen.ONBOARDING_GREETING && (
         <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center bg-calm-bg transition-colors">
           <img
-            src="/au.png"
+            src={`${import.meta.env.BASE_URL}au.png`}
             alt="Símbolo del infinito dorado"
             className="w-40 h-40 mb-10 object-contain drop-shadow-xl hover:scale-105 transition-transform duration-700"
           />
@@ -337,6 +344,7 @@ const App = () => {
       {/* Onboarding — contexto PWA */}
       {screen === AppScreen.ONBOARDING_WELCOME && <WelcomeScreen onNext={handleWelcomeDone} />}
       {screen === AppScreen.ONBOARDING_PERMISSIONS && <PermissionsScreen onDone={handlePermissionsDone} />}
+      {screen === AppScreen.ONBOARDING_FIDGET && <FidgetIntroScreen onNext={handleFidgetIntroDone} />}
 
       {/* App principal */}
       {screen === AppScreen.DASHBOARD && renderDashboard()}

@@ -11,10 +11,11 @@ use "./participant.allium" as participant
 --   - Data export (see data-sovereignty.allium)
 -- Dependencies: Participant defined in participant.allium
 
--- The fidget tool is a non-research feature. It provides a physics-based interactive
--- toy for sensory regulation and focus. Sessions are logged and included in the
--- data export so researchers can understand usage patterns over the study period.
--- The tool is always accessible and never gated by study progression.
+-- The fidget tool provides a physics-based interactive toy for sensory regulation
+-- and focus. Usage is always optional and never required, but sessions are logged
+-- and included in the data export so researchers can understand self-regulation
+-- patterns over the study period. The tool is always accessible and never gated
+-- by study progression.
 
 ------------------------------------------------------------
 -- Entities
@@ -81,6 +82,18 @@ rule FidgetSessionEnded {
         -- on close, so no partial session data is persisted.
 }
 
+-- Fidget introduction (onboarding)
+
+rule FidgetIntroAcknowledged {
+    when: ParticipantAcknowledgesFidgetIntro(p)
+    requires: p.status = active and not p.fidget_intro_seen
+    ensures: p.fidget_intro_seen = true
+
+    @guidance
+        -- Routing to the dashboard after this step is handled by the
+        -- LaunchRouter in participant.allium; this rule only sets the flag.
+}
+
 ------------------------------------------------------------
 -- Invariants
 ------------------------------------------------------------
@@ -131,6 +144,24 @@ surface FidgetToolView {
         -- allowing indefinite play without interaction.
 }
 
+surface FidgetIntroductionView {
+    facing player: ActiveParticipant
+
+    provides:
+        ParticipantAcknowledgesFidgetIntro(player)
+            when not player.fidget_intro_seen
+
+    @guarantee ShowsOnce
+        -- Shown exactly once, between the permissions screen and the dashboard,
+        -- during PWA onboarding. Once fidget_intro_seen is true, this surface
+        -- is never reached again.
+    @guidance
+        -- The screen shows the fidget button (orbit icon, indigo circle) so the
+        -- participant can recognise it later in the dashboard. This is a passive
+        -- introduction, not an interactive session. The participant acknowledges
+        -- and proceeds.
+}
+
 ------------------------------------------------------------
 -- Deferred Specifications
 ------------------------------------------------------------
@@ -148,5 +179,7 @@ deferred PWAInstallation.prompt
 ------------------------------------------------------------
 
 open question "Should fidget sessions be logged when the app is in standalone (installed PWA) mode versus browser mode? Is the distinction meaningful for the research?"
-open question "Is the fidget tool intended as purely optional wellbeing support, or should its usage patterns be interpreted as research data about self-regulation behaviour?"
+-- Resolved: Fidget usage IS logged for research purposes to understand
+-- self-regulation patterns, but using the tool is always optional and never
+-- required. See the module header comment and FidgetSession entity.
 open question "Should there be a maximum session duration after which the tool auto-closes and the session is recorded?"

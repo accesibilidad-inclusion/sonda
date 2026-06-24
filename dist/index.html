@@ -8,11 +8,21 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Sonda" />
     <title>Sonda</title>
-    <link rel="icon" type="image/png" href="/sonda/favicon.png" />
-    <link rel="apple-touch-icon" href="/sonda/favicon.png" />
+    <link rel="icon" type="image/png" href="/sonda/au.png" />
+    <link rel="apple-touch-icon" href="/sonda/au.png" />
     <link rel="manifest" href="/sonda/manifest.json" />
+
+    <!-- Google Fonts: Lexend -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- OpenDyslexic para opción de dislexia -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/opendyslexic/index.css">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Design Tokens: Variables centralizadas de diseño -->
+    <link rel="stylesheet" href="/sonda/design-tokens.css">
 
     <!-- Configuración de Tailwind CSS -->
     <script>
@@ -78,10 +88,22 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/sonda/assets/index-DPKtdoxZ.js"></script>
-  <link rel="stylesheet" crossorigin href="/sonda/assets/index-CL3yCaKE.css">
+  <script type="module" crossorigin src="/sonda/assets/index-COxJls22.js"></script>
 </head>
   <body class="bg-calm-bg text-deep-text font-sans antialiased selection:bg-calm-blue selection:text-white transition-colors duration-300">
     <div id="root"></div>
+
+  <!-- Registro del Service Worker para PWA -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('/sonda/sw.js')
+          .catch((error) => {
+            console.error('Error al registrar Service Worker:', error);
+          });
+      });
+    }
+  </script>
 </body>
 </html>

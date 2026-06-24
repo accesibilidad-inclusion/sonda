@@ -21,7 +21,7 @@ const InstallScreen: React.FC = () => {
     <div className="flex flex-col min-h-screen bg-calm-bg p-8">
       <div className="flex-1 flex flex-col items-center justify-center text-center">
         <img
-          src="/au.png"
+          src={`${import.meta.env.BASE_URL}au.png`}
           alt="Sonda Digital"
           className="w-24 h-24 mb-8 object-contain drop-shadow-lg"
         />
@@ -115,7 +115,7 @@ const InstallScreen: React.FC = () => {
               Ahora cierra esta ventana y abre la app <strong>Sonda</strong> desde el ícono en tu pantalla de inicio.
             </p>
             <div className="w-20 h-20 rounded-3xl overflow-hidden shadow-xl border-2 border-soft-gray">
-              <img src="/au.png" alt="Ícono Sonda" className="w-full h-full object-contain" />
+              <img src={`${import.meta.env.BASE_URL}au.png`} alt="Ícono Sonda" className="w-full h-full object-contain" />
             </div>
             <p className="mt-6 text-sm text-deep-text opacity-50">Puedes cerrar esta pestaña.</p>
           </>
