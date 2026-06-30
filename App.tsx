@@ -271,7 +271,6 @@ const App = () => {
                 {isDevMode && <span className="ml-2 text-xs bg-red-500 text-white px-2 py-0.5 rounded">DEV</span>}
               </p>
             </div>
-            <img src={`${import.meta.env.BASE_URL}au.png`} alt="" className="w-10 h-10 opacity-60 object-contain" />
           </div>
 
           {/* Próxima actividad */}
