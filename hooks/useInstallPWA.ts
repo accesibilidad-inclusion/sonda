@@ -9,6 +9,7 @@ export const useInstallPWA = () => {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
   const [isInStandalone, setIsInStandalone] = useState(false);
   const [swRegistered, setSwRegistered] = useState(false);
 
@@ -16,6 +17,9 @@ export const useInstallPWA = () => {
     // Detectar iOS
     const checkIOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
     setIsIOS(checkIOS);
+
+    // Detectar Android
+    setIsAndroid(/android/i.test(window.navigator.userAgent));
 
     // Verificar si ya está instalado (modo standalone)
     const checkStandalone =
@@ -92,6 +96,7 @@ export const useInstallPWA = () => {
   return {
     isInstallable,
     isIOS,
+    isAndroid,
     isInStandalone,
     swRegistered,
     handleInstallClick,

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Download, Share2 } from 'lucide-react';
+import { Download, Share2, MoreVertical } from 'lucide-react';
 import { useInstallPWA } from '../hooks/useInstallPWA';
 
 const InstallScreen: React.FC = () => {
-  const { isInstallable, isIOS, isInStandalone, swRegistered, handleInstallClick } = useInstallPWA();
+  const { isInstallable, isIOS, isAndroid, isInStandalone, swRegistered, handleInstallClick } = useInstallPWA();
   const [showInstructions, setShowInstructions] = useState(false);
   const [installed, setInstalled] = useState(false);
 
@@ -76,8 +76,50 @@ const InstallScreen: React.FC = () => {
                 </>
               )}
 
-              {/* Chrome/Edge sin evento beforeinstallprompt */}
-              {!isInstallable && !isIOS && swRegistered && (
+              {/* Android sin evento beforeinstallprompt (Firefox, Samsung Internet, WebViews, etc.) */}
+              {!isInstallable && isAndroid && swRegistered && (
+                <>
+                  <button
+                    onClick={() => setShowInstructions(!showInstructions)}
+                    className="flex items-center justify-center w-full gap-2 py-4 text-btn-text bg-calm-blue rounded-2xl font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all"
+                  >
+                    <Download size={20} />
+                    Cómo instalar en Android
+                  </button>
+                  {showInstructions && (
+                    <div className="bg-card-bg p-5 rounded-2xl border border-soft-gray text-sm text-deep-text space-y-3 text-left animate-fade-in">
+                      <p className="font-semibold">En Chrome:</p>
+                      <ol className="list-decimal list-inside space-y-2 opacity-80">
+                        <li>Toca el menú <MoreVertical size={14} className="inline mx-0.5" /> (arriba a la derecha)</li>
+                        <li>Selecciona <strong>"Agregar a la pantalla principal"</strong> o <strong>"Instalar app"</strong></li>
+                        <li>Confirma tocando <strong>"Instalar"</strong></li>
+                      </ol>
+                      <p className="font-semibold pt-1">En Samsung Internet:</p>
+                      <ol className="list-decimal list-inside space-y-2 opacity-80">
+                        <li>Toca el menú <strong>≡</strong> (abajo a la derecha)</li>
+                        <li>Selecciona <strong>"Agregar página a"</strong> → <strong>"Pantalla de inicio"</strong></li>
+                      </ol>
+                      <p className="font-semibold pt-1">En Firefox:</p>
+                      <ol className="list-decimal list-inside space-y-2 opacity-80">
+                        <li>Toca el menú <MoreVertical size={14} className="inline mx-0.5" /></li>
+                        <li>Selecciona <strong>"Agregar a pantalla de inicio"</strong></li>
+                      </ol>
+                      <p className="opacity-70 pt-1">
+                        Si abriste este enlace desde otra app (WhatsApp, Instagram, correo), primero ábrelo en <strong>Chrome</strong> usando el menú de esa app.
+                      </p>
+                      <button
+                        onClick={() => setInstalled(true)}
+                        className="w-full mt-2 py-2 text-calm-blue font-semibold text-sm"
+                      >
+                        Ya la instalé →
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Escritorio (Chrome/Edge) sin evento beforeinstallprompt */}
+              {!isInstallable && !isIOS && !isAndroid && swRegistered && (
                 <>
                   <button
                     onClick={() => setShowInstructions(!showInstructions)}

@@ -1,11 +1,14 @@
 // Service Worker para PWA Sonda Digital
 // Las rutas relativas se resuelven desde la ubicación del SW (/sonda/sw.js → /sonda/)
-const CACHE_NAME = 'sonda-v2';
+const CACHE_NAME = 'sonda-v3';
 const urlsToCache = [
   './',
   './index.html',
   './manifest.json',
   './au.png',
+  './au-black.png',
+  './icon-192.png',
+  './icon-512.png',
   './design-tokens.css'
 ];
 
