@@ -18,7 +18,6 @@ export enum ResponseMode {
   TEXT = 'TEXT',
   AUDIO = 'AUDIO',
   PHOTO = 'PHOTO',
-  VIDEO = 'VIDEO',
   SKIPPED = 'SKIPPED'
 }
 

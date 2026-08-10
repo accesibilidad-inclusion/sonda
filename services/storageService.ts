@@ -174,6 +174,7 @@ export const storageService = {
       const startDate = localStorage.getItem(KEYS.START_DATE);
 
       const data = {
+        schemaVersion: "1.1",
         exportedAt: new Date().toISOString(),
         studyStartDate: startDate,
         progress: progress ? JSON.parse(progress) : null,

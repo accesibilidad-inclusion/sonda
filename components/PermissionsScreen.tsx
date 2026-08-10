@@ -90,7 +90,7 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onDone }) => {
           Permisos de la app
         </h1>
         <p className="text-base text-deep-text opacity-70 leading-relaxed mb-8">
-          La sonda puede usar tu cámara y micrófono para que respondas con fotos, videos o audio. Puedes conceder estos permisos ahora o más tarde dentro de cada actividad.
+          La sonda puede usar tu cámara y micrófono para que respondas con fotos o audio. Puedes conceder estos permisos ahora o más tarde dentro de cada actividad.
         </p>
 
         <div className="space-y-4 mb-8">
@@ -105,7 +105,7 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onDone }) => {
           <PermissionRow
             icon={<Camera size={22} />}
             label="Cámara"
-            description="Para tomar fotos o grabar videos de tu entorno de estudio."
+            description="Para tomar fotos de tu entorno de estudio."
             granted={camGranted}
             onRequest={requestCam}
             loading={requesting === 'cam'}

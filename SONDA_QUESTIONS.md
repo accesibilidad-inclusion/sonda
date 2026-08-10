@@ -205,7 +205,7 @@ Creencias sobre la conexión entre la propia persona (y sus acciones) y los resu
 
 **Ejemplo:** "Entregué a tiempo porque me hice un calendario y empecé antes de lo habitual."
 
-**Modalidades:** texto, audio, video.
+**Modalidades:** texto, audio, foto.
 
 ---
 
@@ -214,9 +214,9 @@ Creencias sobre la conexión entre la propia persona (y sus acciones) y los resu
 Esta actividad funciona bien como cierre porque conecta el esfuerzo presente con la proyección personal (control de las expectativas y autoconcepto).
 
 **Pregunta:**
-> Imagina que te estás graduando y puedes dejarte un mensaje para recordar este momento de tu vida. Pensando en tus rutinas y tareas de estos días, ¿qué cosas concretas te gustaría recordar sobre cómo lograste avanzar en tus estudios? Graba un audio o un video corto, o escribe un texto contándonos qué te dirías.
+> Imagina que te estás graduando y puedes dejarte un mensaje para recordar este momento de tu vida. Pensando en tus rutinas y tareas de estos días, ¿qué cosas concretas te gustaría recordar sobre cómo lograste avanzar en tus estudios? Graba un audio, toma una foto o escribe un texto contándonos qué te dirías.
 
-**Modalidades:** audio, video, texto.
+**Modalidades:** audio, foto, texto.
 
 ---
 

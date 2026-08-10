@@ -227,7 +227,7 @@ rule PermissionDenied {
 
     @guidance
         -- A denied permission restricts available response modes (audio requires
-        -- microphone; photo and video require camera) but does not block participation.
+        -- microphone; photo requires camera) but does not block participation.
         -- Unavailable modes are explained rather than silently hidden.
         -- Permissions can be re-requested in-context within individual activities
         -- (e.g. when the participant attempts to use a mode that requires a denied
@@ -405,7 +405,7 @@ surface PermissionsScreen {
 
     @guarantee ContextualExplanation
         -- Each permission request is accompanied by an explanation of why it
-        -- matters for the research activities (camera for photo/video responses,
+        -- matters for the research activities (camera for photo responses,
         -- microphone for audio responses).
     @guarantee SkipIsValid
         -- The participant can skip any or all permissions without consequence.

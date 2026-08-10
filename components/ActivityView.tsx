@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { ArrowLeft, Camera, Mic, Type, SkipForward, HelpCircle, MessageSquare, Trash2, Pencil, Video } from 'lucide-react';
+import { ArrowLeft, Camera, Mic, Type, SkipForward, HelpCircle, MessageSquare, Trash2, Pencil } from 'lucide-react';
 import { Activity, ResponseMode, ResponseItem } from '../types';
-import { compressImage, compressVideo, getAudioConstraints, getAudioRecorderOptions } from '../services/mediaCompression';
+import { compressImage, getAudioConstraints, getAudioRecorderOptions } from '../services/mediaCompression';
 
 interface ActivityViewProps {
   activity: Activity;
@@ -12,8 +12,7 @@ interface ActivityViewProps {
 const MODE_LABELS: Record<ResponseMode, string> = {
   [ResponseMode.TEXT]: 'Texto',
   [ResponseMode.AUDIO]: 'Audio',
-  [ResponseMode.PHOTO]: 'Foto / Video',
-  [ResponseMode.VIDEO]: 'Video',
+  [ResponseMode.PHOTO]: 'Foto',
   [ResponseMode.SKIPPED]: 'Sin respuesta',
 };
 
@@ -89,7 +88,7 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
       setMode(ResponseMode.TEXT);
     } else if (item.mode === ResponseMode.AUDIO) {
       setMode(ResponseMode.AUDIO);
-    } else if (item.mode === ResponseMode.PHOTO || item.mode === ResponseMode.VIDEO) {
+    } else if (item.mode === ResponseMode.PHOTO) {
       setMode(ResponseMode.PHOTO);
     } else if (item.mode === ResponseMode.SKIPPED) {
       setMode(ResponseMode.TEXT);
@@ -166,16 +165,14 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
     const file = e.target.files[0];
-    const isVideo = file.type.startsWith('video/');
-    const responseType = isVideo ? ResponseMode.VIDEO : ResponseMode.PHOTO;
 
     try {
       setIsSubmitting(true);
-      const compressed = isVideo ? await compressVideo(file) : await compressImage(file);
+      const compressed = await compressImage(file);
       if (editingTimestamp) {
-        replaceResponse(editingTimestamp, compressed, responseType);
+        replaceResponse(editingTimestamp, compressed, ResponseMode.PHOTO);
       } else {
-        await addResponse(compressed, responseType);
+        await addResponse(compressed, ResponseMode.PHOTO);
       }
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Error al procesar el archivo.');
@@ -187,7 +184,7 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
 
   // Filtra los modos permitidos para esta actividad (SKIPPED siempre disponible)
   const allowed = activity.allowedModes ?? [ResponseMode.TEXT, ResponseMode.AUDIO, ResponseMode.PHOTO];
-  const showPhotoButton = allowed.includes(ResponseMode.PHOTO) || allowed.includes(ResponseMode.VIDEO);
+  const showPhotoButton = allowed.includes(ResponseMode.PHOTO);
   const showAudioButton = allowed.includes(ResponseMode.AUDIO);
   const showTextButton = allowed.includes(ResponseMode.TEXT);
 
@@ -231,7 +228,7 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
                 onClick={() => { cameraInputRef.current?.click(); setShowMediaMenu(false); }}
                 className="w-full flex items-center p-3 hover:bg-calm-bg text-left border-b border-soft-gray text-sm font-medium text-deep-text"
               >
-                Tomar foto o video
+                Tomar foto
               </button>
               <button
                 onClick={() => { fileInputRef.current?.click(); setShowMediaMenu(false); }}
@@ -271,8 +268,8 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
       )}
 
       {/* Inputs ocultos */}
-      <input type="file" accept="image/*,video/*" capture="environment" ref={cameraInputRef} className="hidden" onChange={handleFileChange} />
-      <input type="file" accept="image/*,video/*" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+      <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} className="hidden" onChange={handleFileChange} />
+      <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
     </div>
   );
 
@@ -357,7 +354,6 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
             {resp.mode === ResponseMode.TEXT && <Type size={16} />}
             {resp.mode === ResponseMode.AUDIO && <Mic size={16} />}
             {resp.mode === ResponseMode.PHOTO && <Camera size={16} />}
-            {resp.mode === ResponseMode.VIDEO && <Video size={16} />}
             {resp.mode === ResponseMode.SKIPPED && <SkipForward size={16} />}
           </div>
 
@@ -368,11 +364,6 @@ const ActivityView: React.FC<ActivityViewProps> = ({ activity, onUpdate, onBack 
             {resp.mode === ResponseMode.PHOTO && (
               canViewMedia
                 ? <img src={resp.content!} alt="Respuesta" className="w-full max-w-xs rounded-lg border border-soft-gray" />
-                : <p className="text-sm italic opacity-70">{resp.content}</p>
-            )}
-            {resp.mode === ResponseMode.VIDEO && (
-              canViewMedia
-                ? <video src={resp.content!} controls className="w-full max-w-xs rounded-lg border border-soft-gray max-h-48" />
                 : <p className="text-sm italic opacity-70">{resp.content}</p>
             )}
             {resp.mode === ResponseMode.AUDIO && (

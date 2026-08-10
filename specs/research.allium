@@ -34,7 +34,7 @@ contract StorageSafety {
         -- the budget to be exceeded. Rejection is surfaced as a clear explanation,
         -- not a silent failure.
     @invariant MediaSizeBounded
-        -- Media responses (audio, photo, video) are reduced to bounded sizes
+        -- Media responses (audio, photo) are reduced to bounded sizes
         -- before their size is assessed against the storage budget.
         -- The participant's raw captured media is not stored verbatim.
     @invariant StorageTransparent
@@ -47,7 +47,7 @@ contract StorageSafety {
 -- Enumerations
 ------------------------------------------------------------
 
-enum ResponseMode { text | audio | photo | video | skipped }
+enum ResponseMode { text | audio | photo | skipped }
 
 ------------------------------------------------------------
 -- Entities
@@ -181,11 +181,11 @@ rule StudyContentInitialized {
 
         -- Momento 11 — Control de las expectativas (Creencias de control-accion)
         let m11 = Moment.created(participant: p, id: 11, status: locked, always_visible: false, title: study_moment_title(11), goal: study_moment_goal(11))
-        Activity.created(moment: m11, id: "11.1", title: study_activity_title("11.1"), description: study_activity_description("11.1"), example: study_activity_example("11.1"), allowed_modes: {text, audio, video}, tac_dimension: "Creencias de control-accion", tac_subdimension: "Control de las expectativas")
+        Activity.created(moment: m11, id: "11.1", title: study_activity_title("11.1"), description: study_activity_description("11.1"), example: study_activity_example("11.1"), allowed_modes: {text, audio, photo}, tac_dimension: "Creencias de control-accion", tac_subdimension: "Control de las expectativas")
 
         -- Momento 12 (Cierre): always visible, optional, repeatable
         let m12 = Moment.created(participant: p, id: 12, status: locked, always_visible: true, title: "Cierre", goal: study_moment_goal(12))
-        Activity.created(moment: m12, id: "12.1", title: "Mensaje al futuro", description: study_activity_description("12.1"), example: study_activity_example("12.1"), allowed_modes: {audio, video, text}, tac_dimension: null, tac_subdimension: null)
+        Activity.created(moment: m12, id: "12.1", title: "Mensaje al futuro", description: study_activity_description("12.1"), example: study_activity_example("12.1"), allowed_modes: {audio, photo, text}, tac_dimension: null, tac_subdimension: null)
 
     @guidance
         -- Titles, goals, descriptions, and examples are resolved from static study
@@ -295,8 +295,7 @@ rule ResponseAdded {
     @guidance
         -- content for media responses is the compressed representation --
         -- audio at 16 kHz mono Opus, images resized to at most 1000 px at 80 %
-        -- JPEG quality, video at at most 720 p with a 30-second cap.
-        -- Compression is applied before this trigger is invoked, so
+        -- JPEG quality. Compression is applied before this trigger is invoked, so
         -- estimated_size(content) reflects the actual storage cost.
         -- content is null for skipped responses.
         -- Multiple responses per activity are supported.
@@ -320,7 +319,7 @@ rule ResponseReplaced {
 
     @guidance
         -- The participant has full control over their responses at any time.
-        -- They can replace any response (text, audio, photo, video, skipped)
+        -- They can replace any response (text, audio, photo, skipped)
         -- with a new one of any mode. The storage check accounts for the net
         -- change in size (new content minus old content).
 }
@@ -344,9 +343,9 @@ invariant AudioRequiresMicrophone {
         r.mode = audio implies r.activity.moment.participant.microphone_granted
 }
 
-invariant PhotoOrVideoRequiresCamera {
+invariant PhotoRequiresCamera {
     for r in Responses:
-        r.mode in {photo, video} implies r.activity.moment.participant.camera_granted
+        r.mode = photo implies r.activity.moment.participant.camera_granted
 }
 
 invariant LockedMomentsHaveNoResponses {
@@ -410,7 +409,7 @@ surface StudyDashboard {
         -- Completed momentos remain visible but read-only.
         -- A storage indicator at the dashboard level gives the participant a global
         -- view of how much space their data occupies. This is especially relevant
-        -- after adding photo or video responses.
+        -- after adding photo responses.
         -- The Cierre momento (always_visible = true) is positioned at the bottom
         -- of the dashboard and is accessible from the start. It is optional and
         -- does not count toward any completion gate.

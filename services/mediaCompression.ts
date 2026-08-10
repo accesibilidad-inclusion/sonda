@@ -1,7 +1,7 @@
 /**
  * Media Compression Service
  *
- * Compresses images, videos, and audio to reduce localStorage size
+ * Compresses images and audio to reduce localStorage size
  */
 
 import { storageService } from './storageService';
@@ -11,8 +11,6 @@ const IS_DEVELOPER_MODE = storageService.isDevMode();
 // Configuration
 const IMAGE_MAX_DIMENSION = 1000;  // Max width or height in pixels
 const IMAGE_QUALITY = 0.8;         // JPEG quality (0.0 - 1.0)
-const VIDEO_MAX_DIMENSION = 720;   // Max width or height for videos
-const VIDEO_MAX_DURATION = 30;     // Max duration in seconds
 
 /**
  * Compress an image file to JPEG with max dimension
@@ -77,83 +75,6 @@ export const compressImage = (file: File): Promise<string> => {
     };
 
     img.src = URL.createObjectURL(file);
-  });
-};
-
-/**
- * Compress a video file by resizing frames
- */
-export const compressVideo = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    if (IS_DEVELOPER_MODE) console.log(`[Compression] Starting video compression for ${file.name} (${(file.size / 1024).toFixed(2)}KB)`);
-
-    const video = document.createElement('video');
-    video.preload = 'metadata';
-
-    video.onloadedmetadata = () => {
-      const duration = video.duration;
-
-      if (IS_DEVELOPER_MODE) console.log(`[Compression] Video duration: ${duration.toFixed(2)}s`);
-
-      // Check duration limit
-      if (duration > VIDEO_MAX_DURATION) {
-        reject(new Error(`El video es demasiado largo (${duration.toFixed(0)}s). El máximo permitido es ${VIDEO_MAX_DURATION}s.`));
-        return;
-      }
-
-      // For now, we'll just resize the first frame as a thumbnail
-      // Full video compression would require a library or backend processing
-      video.currentTime = 0;
-    };
-
-    video.onseeked = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx) {
-          reject(new Error('Could not get canvas context'));
-          return;
-        }
-
-        // Calculate new dimensions
-        let width = video.videoWidth;
-        let height = video.videoHeight;
-
-        if (width > height) {
-          if (width > VIDEO_MAX_DIMENSION) {
-            height = Math.round((height * VIDEO_MAX_DIMENSION) / width);
-            width = VIDEO_MAX_DIMENSION;
-          }
-        } else {
-          if (height > VIDEO_MAX_DIMENSION) {
-            width = Math.round((width * VIDEO_MAX_DIMENSION) / height);
-            height = VIDEO_MAX_DIMENSION;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(video, 0, 0, width, height);
-
-        // Return thumbnail as placeholder
-        const thumbnail = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
-
-        if (IS_DEVELOPER_MODE) {
-          console.log(`[Compression] Video thumbnail created: ${width}x${height}`);
-        }
-
-        resolve(thumbnail);
-      } catch (error) {
-        reject(error);
-      }
-    };
-
-    video.onerror = () => {
-      reject(new Error('Failed to load video'));
-    };
-
-    video.src = URL.createObjectURL(file);
   });
 };
 
