@@ -1,217 +1,224 @@
-import { Moment, SensoryProfile } from '../types';
+import { Moment, SensoryProfile, ExportSelection } from '../types';
 import { STUDY_CONTENT, HELP_CONTENT } from '../constants';
+import { idbGet, idbSet, idbClear } from './db';
 
-const KEYS = {
+// Claves IDB — datos grandes que crecen con medios base64.
+const IDB = {
   PROGRESS: 'sonda_progress',
-  SENSORY: 'sonda_sensory',
   USAGE: 'sonda_usage',
+};
+
+// Claves localStorage — flags y datos pequeños que se leen de forma síncrona al arrancar.
+const LS = {
+  SENSORY: 'sonda_sensory',
   START_DATE: 'sonda_start_date',
   SEEN_WELCOME: 'sonda_seen_welcome',
   SEEN_PERMISSIONS: 'sonda_seen_permissions',
   SEEN_FIDGET: 'sonda_seen_fidget',
   DEV_MODE: 'sonda_dev_mode',
-  // Claves antiguas para migración
-  LEGACY_PROGRESS: 'neuroprobe_progress',
-  LEGACY_SENSORY: 'neuroprobe_sensory',
-  LEGACY_USAGE: 'neuroprobe_usage',
-  LEGACY_START_DATE: 'neuroprobe_start_date',
 };
 
-// Migra datos del formato antiguo (neuroprobe_*) al nuevo (sonda_*)
-const migrateIfNeeded = () => {
-  try {
-    const alreadyMigrated = localStorage.getItem(KEYS.START_DATE) || localStorage.getItem(KEYS.PROGRESS);
-    if (alreadyMigrated) return;
-
-    const legacyDate = localStorage.getItem(KEYS.LEGACY_START_DATE);
-    const legacyUsage = localStorage.getItem(KEYS.LEGACY_USAGE);
-    const legacySensory = localStorage.getItem(KEYS.LEGACY_SENSORY);
-
-    if (legacyDate) {
-      localStorage.setItem(KEYS.START_DATE, legacyDate);
-      // Si había fecha de inicio, asumir que ya consintió y vio el welcome
-      localStorage.setItem(KEYS.SEEN_WELCOME, 'true');
-      localStorage.setItem(KEYS.SEEN_PERMISSIONS, 'true');
-    }
-    if (legacyUsage) localStorage.setItem(KEYS.USAGE, legacyUsage);
-    if (legacySensory) localStorage.setItem(KEYS.SENSORY, legacySensory);
-
-    // El progreso antiguo (WeekModule[]) no es compatible con Moment[]; se descarta.
-    // El participante comienza desde el inicio con el nuevo guión TAC.
-  } catch (e) {
-    console.error('Error en migración de datos:', e);
-  }
-};
-
-migrateIfNeeded();
+function defaultMoments(): Moment[] {
+  return STUDY_CONTENT.map(m => ({
+    ...m,
+    activities: m.activities.map(a => ({ ...a, responses: [] })),
+  }));
+}
 
 export const storageService = {
-  // --- Progreso ---
-  saveProgress: (moments: Moment[]) => {
+
+  // ── Progreso (IDB) ─────────────────────────────────────────────────────────
+
+  /** Lectura síncrona desde localStorage: sólo para el estado inicial de React.
+   *  Después del primer montaje, loadProgress() (async) toma el relevo. */
+  loadProgressSync(): Moment[] {
     try {
-      localStorage.setItem(KEYS.PROGRESS, JSON.stringify(moments));
-    } catch (e) {
-      console.error('Error guardando progreso:', e);
-    }
+      const raw = localStorage.getItem(IDB.PROGRESS);
+      if (raw) return JSON.parse(raw);
+    } catch { /* corrupción: ignorar */ }
+    return defaultMoments();
   },
 
-  loadProgress: (): Moment[] => {
+  /** Lectura canónica: IDB primero, localStorage como fallback pre-migración. */
+  async loadProgress(): Promise<Moment[]> {
     try {
-      const saved = localStorage.getItem(KEYS.PROGRESS);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Error cargando progreso:', e);
-    }
-    return STUDY_CONTENT.map(m => ({ ...m, activities: m.activities.map(a => ({ ...a, responses: [] })) }));
-  },
-
-  // --- Fecha de inicio (consentimiento) ---
-  saveStartDate: (dateIsoString: string) => {
+      const data = await idbGet<Moment[]>(IDB.PROGRESS);
+      if (data) return data;
+    } catch { /* continuar al fallback */ }
     try {
-      localStorage.setItem(KEYS.START_DATE, dateIsoString);
-    } catch (e) {
-      console.error('Error guardando fecha de inicio:', e);
-    }
+      const raw = localStorage.getItem(IDB.PROGRESS);
+      if (raw) return JSON.parse(raw);
+    } catch { /* ignorar */ }
+    return defaultMoments();
   },
 
-  loadStartDate: (): string | null => {
+  /** Lanza si la escritura falla (el llamador muestra el error al usuario). */
+  async saveProgress(moments: Moment[]): Promise<void> {
+    await idbSet(IDB.PROGRESS, moments);
+  },
+
+  // ── Fecha de inicio / consentimiento (localStorage) ────────────────────────
+
+  saveStartDate(dateIsoString: string) {
+    localStorage.setItem(LS.START_DATE, dateIsoString);
+  },
+
+  loadStartDate(): string | null {
+    return localStorage.getItem(LS.START_DATE);
+  },
+
+  hasConsented(): boolean {
+    return !!localStorage.getItem(LS.START_DATE);
+  },
+
+  // ── Flags de onboarding (localStorage) ────────────────────────────────────
+
+  markWelcomeSeen()       { localStorage.setItem(LS.SEEN_WELCOME, 'true'); },
+  hasSeenWelcome()        { return localStorage.getItem(LS.SEEN_WELCOME) === 'true'; },
+  markPermissionsSeen()   { localStorage.setItem(LS.SEEN_PERMISSIONS, 'true'); },
+  hasSeenPermissions()    { return localStorage.getItem(LS.SEEN_PERMISSIONS) === 'true'; },
+  markFidgetIntroSeen()   { localStorage.setItem(LS.SEEN_FIDGET, 'true'); },
+  hasSeenFidgetIntro()    { return localStorage.getItem(LS.SEEN_FIDGET) === 'true'; },
+
+  // ── Modo desarrollador (localStorage) ─────────────────────────────────────
+
+  isDevMode()              { return localStorage.getItem(LS.DEV_MODE) === 'true'; },
+  setDevMode(on: boolean)  { localStorage.setItem(LS.DEV_MODE, on ? 'true' : 'false'); },
+
+  // ── Consentimiento del registro del fidget (localStorage) ─────────────────
+
+  getFidgetConsent(): { granted: boolean; decidedAt: string } | null {
     try {
-      return localStorage.getItem(KEYS.START_DATE);
-    } catch (e) {
-      console.error('Error cargando fecha de inicio:', e);
-      return null;
-    }
+      const raw = localStorage.getItem('sonda_fidget_consent');
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
   },
 
-  hasConsented: (): boolean => {
-    return !!localStorage.getItem(KEYS.START_DATE);
+  setFidgetConsent(granted: boolean) {
+    localStorage.setItem('sonda_fidget_consent', JSON.stringify({
+      granted,
+      decidedAt: new Date().toISOString(),
+    }));
   },
 
-  // --- Estado de onboarding PWA ---
-  markWelcomeSeen: () => {
-    localStorage.setItem(KEYS.SEEN_WELCOME, 'true');
+  async clearFidgetLogs(): Promise<void> {
+    await idbSet(IDB.USAGE, []);
+    localStorage.removeItem(IDB.USAGE); // limpiar también el fallback pre-migración
   },
 
-  hasSeenWelcome: (): boolean => {
-    return localStorage.getItem(KEYS.SEEN_WELCOME) === 'true';
+  // ── Perfil sensorial (localStorage — pequeño, se lee de forma síncrona) ───
+
+  saveSensoryProfile(profile: SensoryProfile) {
+    try { localStorage.setItem(LS.SENSORY, JSON.stringify(profile)); } catch { /* ignorar */ }
   },
 
-  markPermissionsSeen: () => {
-    localStorage.setItem(KEYS.SEEN_PERMISSIONS, 'true');
-  },
-
-  hasSeenPermissions: (): boolean => {
-    return localStorage.getItem(KEYS.SEEN_PERMISSIONS) === 'true';
-  },
-
-  markFidgetIntroSeen: () => {
-    localStorage.setItem(KEYS.SEEN_FIDGET, 'true');
-  },
-
-  hasSeenFidgetIntro: (): boolean => {
-    return localStorage.getItem(KEYS.SEEN_FIDGET) === 'true';
-  },
-
-  // --- Modo desarrollador ---
-  isDevMode: (): boolean => {
-    return localStorage.getItem(KEYS.DEV_MODE) === 'true';
-  },
-
-  setDevMode: (enabled: boolean) => {
-    localStorage.setItem(KEYS.DEV_MODE, enabled ? 'true' : 'false');
-  },
-
-  // --- Perfil sensorial ---
-  saveSensoryProfile: (profile: SensoryProfile) => {
+  loadSensoryProfile(defaultProfile: SensoryProfile): SensoryProfile {
     try {
-      localStorage.setItem(KEYS.SENSORY, JSON.stringify(profile));
-    } catch (e) {
-      console.error('Error guardando perfil sensorial:', e);
-    }
-  },
-
-  loadSensoryProfile: (defaultProfile: SensoryProfile): SensoryProfile => {
-    try {
-      const saved = localStorage.getItem(KEYS.SENSORY);
-      if (saved) {
-        return { ...defaultProfile, ...JSON.parse(saved) };
-      }
-    } catch (e) {
-      console.error('Error cargando perfil sensorial:', e);
-    }
+      const raw = localStorage.getItem(LS.SENSORY);
+      if (raw) return { ...defaultProfile, ...JSON.parse(raw) };
+    } catch { /* ignorar */ }
     return defaultProfile;
   },
 
-  // --- Logs de uso (datos pasivos) ---
-  saveUsageLog: (entry: any) => {
-    try {
-      const currentLogs = storageService.loadUsageLogs();
-      currentLogs.push({ timestamp: new Date().toISOString(), ...entry });
-      localStorage.setItem(KEYS.USAGE, JSON.stringify(currentLogs));
-    } catch (e) {
-      console.error('Error guardando log de uso:', e);
-    }
+  // ── Logs de uso (IDB) ─────────────────────────────────────────────────────
+
+  async saveUsageLog(entry: object): Promise<void> {
+    const logs = await storageService.loadUsageLogs();
+    logs.push({ timestamp: new Date().toISOString(), ...entry });
+    await idbSet(IDB.USAGE, logs);
   },
 
-  loadUsageLogs: (): any[] => {
+  async loadUsageLogs(): Promise<object[]> {
     try {
-      const saved = localStorage.getItem(KEYS.USAGE);
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error('Error cargando logs de uso:', e);
-      return [];
-    }
+      const data = await idbGet<object[]>(IDB.USAGE);
+      if (data) return data;
+    } catch { /* continuar al fallback */ }
+    try {
+      const raw = localStorage.getItem(IDB.USAGE);
+      if (raw) return JSON.parse(raw);
+    } catch { /* ignorar */ }
+    return [];
   },
 
-  // --- Exportación de datos ---
-  exportData: () => {
+  // ── Exportación ────────────────────────────────────────────────────────────
+
+  /** Construye el blob del sobre de datos según la selección.
+   *  selection por defecto = todo incluido (para exportaciones de emergencia). */
+  async buildExportBlob(selection: ExportSelection = { bitacora: true, mensajeAlFuturo: true, fidget: true }): Promise<Blob> {
+    const [allMoments, allUsageLogs] = await Promise.all([
+      storageService.loadProgress(),
+      storageService.loadUsageLogs(),
+    ]);
+    const sensoryRaw = localStorage.getItem(LS.SENSORY);
+
+    const bitacora = allMoments.filter(m => !m.alwaysVisible);
+    const mensajeFuturo = allMoments.filter(m => m.alwaysVisible);
+
+    const progress = [
+      ...(selection.bitacora ? bitacora : []),
+      ...(selection.mensajeAlFuturo ? mensajeFuturo : []),
+    ];
+
+    const payload = {
+      schemaVersion: '2.0',
+      exportedAt: new Date().toISOString(),
+      studyStartDate: storageService.loadStartDate(),
+      seleccion: selection,
+      omitido: {
+        bitacora: !selection.bitacora,
+        mensajeAlFuturo: !selection.mensajeAlFuturo,
+        fidget: !selection.fidget,
+      },
+      progress,
+      sensoryProfile: sensoryRaw ? JSON.parse(sensoryRaw) : null,
+      usageLogs: selection.fidget ? allUsageLogs : [],
+      deviceInfo: {
+        userAgent: navigator.userAgent,
+        screen: { width: window.screen.width, height: window.screen.height },
+      },
+    };
+
+    return new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  },
+
+  exportFilename(): string {
+    return `sonda_datos_${new Date().toISOString().split('T')[0]}.json`;
+  },
+
+  /** Descarga directa (fallback de emergencia, sin pantalla de revisión). */
+  async exportData(selection?: ExportSelection): Promise<boolean> {
     try {
-      const progress = localStorage.getItem(KEYS.PROGRESS);
-      const sensory = localStorage.getItem(KEYS.SENSORY);
-      const usage = localStorage.getItem(KEYS.USAGE);
-      const startDate = localStorage.getItem(KEYS.START_DATE);
-
-      const data = {
-        schemaVersion: "1.1",
-        exportedAt: new Date().toISOString(),
-        studyStartDate: startDate,
-        progress: progress ? JSON.parse(progress) : null,
-        sensoryProfile: sensory ? JSON.parse(sensory) : null,
-        usageLogs: usage ? JSON.parse(usage) : [],
-        deviceInfo: {
-          userAgent: navigator.userAgent,
-          screen: { width: window.screen.width, height: window.screen.height }
-        }
-      };
-
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const blob = await storageService.buildExportBlob(selection);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `sonda_datos_${new Date().toISOString().split('T')[0]}.json`;
+      a.download = storageService.exportFilename();
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       return true;
-    } catch (e) {
-      console.error('Error exportando datos:', e);
+    } catch {
       return false;
     }
   },
 
-  prepareEmailData: () => {
-    storageService.exportData();
-    const recipientEmail = storageService.isDevMode() ? 'hspencer@ead.cl' : HELP_CONTENT.email;
+  emailHref(): string {
+    const recipient = storageService.isDevMode() ? 'hspencer@ead.cl' : HELP_CONTENT.email;
     const subject = encodeURIComponent(HELP_CONTENT.subject);
-    const body = encodeURIComponent('Hola,\n\nAdjunto a este correo el archivo JSON descargado desde la aplicación Sonda Digital.\n\nSaludos.');
-    window.location.href = `mailto:${recipientEmail}?subject=${subject}&body=${body}`;
+    const body = encodeURIComponent(
+      'Hola,\n\nAdjunto a este correo el archivo con mis datos de Sonda Digital.\n\nSaludos.'
+    );
+    return `mailto:${recipient}?subject=${subject}&body=${body}`;
   },
 
-  clearAllData: () => {
-    Object.values(KEYS).forEach(key => localStorage.removeItem(key));
+  // ── Borrado total ──────────────────────────────────────────────────────────
+
+  async clearAllData() {
+    await idbClear();
+    Object.values(LS).forEach(k => localStorage.removeItem(k));
+    // Limpiar también las claves IDB que puedan estar en localStorage (pre-migración)
+    Object.values(IDB).forEach(k => localStorage.removeItem(k));
     window.location.reload();
-  }
+  },
 };

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, MessageCircle, Mail, Download, Share2 } from 'lucide-react';
+import { X, MessageCircle, Mail, Download, Share2, LogOut, Trash2 } from 'lucide-react';
 import { HELP_CONTENT } from '../constants';
 import { useInstallPWA } from '../hooks/useInstallPWA';
+import { storageService } from '../services/storageService';
 
 interface HelpModalProps {
   isOpen: boolean;
@@ -114,10 +115,38 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             </a>
           </div>
         </div>
+        {/* Retiro del estudio */}
+        <div className="border-t border-soft-gray p-6 space-y-3">
+          <p className="text-xs font-bold text-deep-text opacity-40 uppercase tracking-wider mb-3">
+            Retirarse del estudio
+          </p>
+          <a
+            href={`mailto:${HELP_CONTENT.email}?subject=${encodeURIComponent('Quiero retirarme del estudio — FONDECYT 1251541')}&body=${encodeURIComponent('Hola,\n\nQuiero retirarme de la investigación.\n\n[Opcional] Solicito que eliminen los datos que ya les envié: Sí / No\n\nGracias.')}`}
+            className="flex items-center justify-center w-full gap-3 p-3 text-red-700 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100 transition-colors font-medium text-sm"
+          >
+            <LogOut size={18} />
+            Quiero retirarme
+          </a>
+          <button
+            onClick={() => {
+              if (confirm('¿Borrar todos tus datos locales? Esta acción no puede deshacerse. Los datos que ya enviaste al equipo no se borran con esto.')) {
+                storageService.clearAllData().catch(console.error);
+              }
+            }}
+            className="flex items-center justify-center w-full gap-3 p-3 text-deep-text opacity-50 bg-calm-bg border border-soft-gray rounded-xl hover:opacity-70 transition-opacity font-medium text-sm"
+          >
+            <Trash2 size={16} />
+            Borrar mis datos del teléfono
+          </button>
+          <p className="text-xs text-deep-text opacity-40 leading-relaxed text-center">
+            Borrar los datos locales no elimina lo que ya enviaste por correo.
+          </p>
+        </div>
+
         <div className="bg-calm-bg p-4 text-center border-t border-soft-gray">
-            <button onClick={onClose} className="text-sm text-deep-text opacity-60 underline">
-                Volver a la aplicación
-            </button>
+          <button onClick={onClose} className="text-sm text-deep-text opacity-60 underline">
+            Volver a la aplicación
+          </button>
         </div>
       </div>
     </div>

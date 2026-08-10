@@ -1,6 +1,7 @@
-import React from 'react';
-import { X, Type, Volume2, Activity as ActivityIcon, Settings } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Type, Volume2, Activity as ActivityIcon, Settings, ShieldOff } from 'lucide-react';
 import { SensoryProfile, ThemeType, FontSizeType, SoundType } from '../types';
+import { storageService } from '../services/storageService';
 
 interface SensorySettingsProps {
   isOpen: boolean;
@@ -10,10 +11,24 @@ interface SensorySettingsProps {
 }
 
 const SensorySettings: React.FC<SensorySettingsProps> = ({ isOpen, onClose, settings, onUpdate }) => {
+  const [fidgetConsent, setFidgetConsent] = useState(() => storageService.getFidgetConsent());
+
   if (!isOpen) return null;
 
   const update = (key: keyof SensoryProfile, value: any) => {
     onUpdate({ ...settings, [key]: value });
+  };
+
+  const handleFidgetConsentToggle = () => {
+    const newGranted = !fidgetConsent?.granted;
+    if (!newGranted && fidgetConsent?.granted) {
+      // Revocando: ofrecer borrar los registros acumulados
+      if (confirm('¿Borrar también los registros de uso del fidget ya guardados?')) {
+        storageService.clearFidgetLogs().catch(console.error);
+      }
+    }
+    storageService.setFidgetConsent(newGranted);
+    setFidgetConsent({ granted: newGranted, decidedAt: new Date().toISOString() });
   };
 
   return (
@@ -167,8 +182,35 @@ const SensorySettings: React.FC<SensorySettingsProps> = ({ isOpen, onClose, sett
               </div>
           </section>
 
+          {/* Fidget Section */}
+          {fidgetConsent !== null && (
+            <section>
+              <h3 className="text-sm font-bold text-deep-text opacity-40 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <ShieldOff size={16} /> Registro del Fidget
+              </h3>
+              <div className="flex justify-between items-start bg-calm-bg p-4 rounded-xl border border-soft-gray gap-4">
+                <div className="flex flex-col">
+                  <span className="text-sm text-deep-text font-medium">Guardar registro de uso</span>
+                  <span className="text-xs text-deep-text opacity-60 mt-0.5 leading-snug">
+                    Cuándo lo abriste, duración, lanzamientos y arrastres.
+                  </span>
+                </div>
+                <button
+                  onClick={handleFidgetConsentToggle}
+                  className={`w-12 h-7 rounded-full transition-colors relative flex-shrink-0 ${
+                    fidgetConsent.granted ? 'bg-calm-blue' : 'bg-soft-gray'
+                  }`}
+                >
+                  <div className={`absolute top-1 left-1 w-5 h-5 bg-card-bg rounded-full transition-transform shadow-sm ${
+                    fidgetConsent.granted ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </button>
+              </div>
+            </section>
+          )}
+
         </div>
-        
+
         {/* Footer */}
         <div className="p-4 border-t border-soft-gray bg-calm-bg">
            <button onClick={onClose} className="w-full py-3 bg-calm-blue text-btn-text rounded-xl font-bold shadow-md hover:opacity-90 transition-opacity">

@@ -11,8 +11,11 @@ import WelcomeScreen from './components/WelcomeScreen';
 import PermissionsScreen from './components/PermissionsScreen';
 import FidgetIntroScreen from './components/FidgetIntroScreen';
 import DevPanel from './components/DevPanel';
+import ExportReviewScreen from './components/ExportReviewScreen';
 import { audioService } from './services/audioService';
 import { storageService } from './services/storageService';
+import { migrateFromLocalStorage } from './services/migration';
+import { requestPersistence, isStorageCritical } from './services/db';
 
 const DEFAULT_PROFILE: SensoryProfile = {
   theme: 'default',
@@ -63,7 +66,9 @@ function getInitialScreen(): AppScreen {
 const App = () => {
   const [screen, setScreen] = useState<AppScreen>(getInitialScreen);
   const [startDate, setStartDate] = useState<string | null>(storageService.loadStartDate());
-  const [moments, setMoments] = useState<Moment[]>(() => storageService.loadProgress());
+  // Carga inicial síncrona desde localStorage para render inmediato;
+  // el useEffect de montaje la reemplaza con los datos canónicos de IDB.
+  const [moments, setMoments] = useState<Moment[]>(() => storageService.loadProgressSync());
   const [sensoryProfile, setSensoryProfile] = useState<SensoryProfile>(() =>
     storageService.loadSensoryProfile(DEFAULT_PROFILE)
   );
@@ -71,9 +76,28 @@ const App = () => {
   const [showHelp, setShowHelp] = useState(false);
   const [showFidget, setShowFidget] = useState(false);
   const [showSensorySettings, setShowSensorySettings] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Persistencia
-  useEffect(() => { storageService.saveProgress(moments); }, [moments]);
+  // Migración localStorage → IDB, carga canónica y solicitud de persistencia.
+  useEffect(() => {
+    migrateFromLocalStorage()
+      .then(() => storageService.loadProgress())
+      .then(setMoments)
+      .then(requestPersistence)
+      .then(isStorageCritical)
+      .then(critical => {
+        if (critical) setSaveError('Tu almacenamiento está casi lleno. Exporta tus datos para evitar pérdidas.');
+      })
+      .catch(console.error);
+  }, []);
+
+  // Persistencia — lanza si IDB falla y muestra aviso accionable.
+  useEffect(() => {
+    storageService.saveProgress(moments)
+      .then(() => setSaveError(null))
+      .catch(() => setSaveError('No se pudo guardar tu última respuesta. Exporta tus datos ahora.'));
+  }, [moments]);
+
   useEffect(() => { storageService.saveSensoryProfile(sensoryProfile); }, [sensoryProfile]);
 
   // Desbloqueo por día hábil
@@ -157,7 +181,9 @@ const App = () => {
 
   const handleFidgetClose = (data: { startTime: string; durationSeconds: number; shots: number; drags: number }) => {
     setShowFidget(false);
-    storageService.saveUsageLog({ type: 'FIDGET_SESSION', ...data });
+    if (storageService.getFidgetConsent()?.granted) {
+      storageService.saveUsageLog({ type: 'FIDGET_SESSION', ...data }).catch(console.error);
+    }
   };
 
   // --- Helpers del dashboard ---
@@ -300,12 +326,24 @@ const App = () => {
             </div>
           )}
 
+          {/* Aviso de error de almacenamiento */}
+          {saveError && (
+            <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-800">
+              <p className="font-semibold mb-1">Problema de almacenamiento</p>
+              <p className="mb-3 opacity-80">{saveError}</p>
+              <button
+                onClick={() => storageService.exportData().catch(console.error)}
+                className="px-4 py-2 bg-red-600 text-white rounded-xl font-semibold text-sm"
+              >
+                Exportar ahora
+              </button>
+            </div>
+          )}
+
           {/* Exportar datos */}
           <div className="mt-8">
             <button
-              onClick={() => {
-                if (confirm('¿Descargar tus datos en un archivo JSON?')) storageService.exportData();
-              }}
+              onClick={() => setScreen(AppScreen.EXPORT_REVIEW)}
               className="w-full flex items-center justify-center gap-3 py-4 bg-calm-bg border-2 border-soft-gray text-deep-text opacity-70 rounded-2xl font-semibold text-sm hover:opacity-100 transition-opacity"
             >
               <Download size={18} />
@@ -355,6 +393,14 @@ const App = () => {
         <ActivityView
           activity={activeActivity}
           onUpdate={handleActivityUpdate}
+          onBack={() => setScreen(AppScreen.DASHBOARD)}
+        />
+      )}
+
+      {/* Revisión de exportación */}
+      {screen === AppScreen.EXPORT_REVIEW && (
+        <ExportReviewScreen
+          moments={moments}
           onBack={() => setScreen(AppScreen.DASHBOARD)}
         />
       )}

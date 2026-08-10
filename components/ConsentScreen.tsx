@@ -85,7 +85,9 @@ const ConsentScreen: React.FC<ConsentScreenProps> = ({ onAccept }) => {
           </div>
           <div>
             <h3 className="font-bold text-base mb-2">7. Voluntariedad y Derecho a Retirarse</h3>
-            <p className="opacity-90">Tu participación es voluntaria y no afecta tus notas. Puedes retirarte sin dar explicaciones. Entendemos que si dejas de usar la app, puede ser una señal de retiro.</p>
+            <p className="opacity-90 mb-2">Tu participación es voluntaria y no afecta tus notas ni tu situación académica. Puedes retirarte cuando quieras, sin dar explicaciones.</p>
+            <p className="opacity-90 mb-2">Puedes dejar de usar la aplicación durante días o semanas y retomar después. Una pausa no es un retiro, y la aplicación no informa a nadie de cuándo la usas: todo ocurre en tu teléfono.</p>
+            <p className="opacity-90">Si decides retirarte, avísanos por correo o WhatsApp usando el botón <strong>"Quiero retirarme"</strong> que está en el menú de Ayuda. Si ya nos habías enviado datos y quieres que los eliminemos, indícalo en el mensaje.</p>
           </div>
           <div className="bg-card-bg border border-soft-gray p-4 rounded-xl">
             <h3 className="font-bold text-base mb-2">8. Contacto</h3>

@@ -11,7 +11,14 @@ export enum AppScreen {
   // App principal
   DASHBOARD = 'DASHBOARD',
   ACTIVITY_VIEW = 'ACTIVITY_VIEW',
+  EXPORT_REVIEW = 'EXPORT_REVIEW',
   DEV_PANEL = 'DEV_PANEL',
+}
+
+export interface ExportSelection {
+  bitacora: boolean;
+  mensajeAlFuturo: boolean;
+  fidget: boolean;
 }
 
 export enum ResponseMode {
