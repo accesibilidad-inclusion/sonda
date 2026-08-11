@@ -46,12 +46,12 @@ const FidgetIntroScreen: React.FC<FidgetIntroScreenProps> = ({ onNext }) => {
 
         {/* Bloque de consentimiento de registro */}
         <div className="w-full max-w-sm bg-card-bg border-2 border-soft-gray rounded-2xl p-5 mb-8">
-          <p className="text-sm font-bold text-deep-text mb-2">Sobre el registro de uso</p>
+          <p className="text-sm font-bold text-deep-text mb-2">¿Por qué nos interesa?</p>
           <p className="text-sm text-deep-text opacity-70 leading-relaxed mb-4">
-            Si lo autorizas, la sonda guarda en tu teléfono cuatro datos cada vez que cierras el fidget: cuándo lo abriste, cuántos minutos estuvo abierto, cuántas veces lanzaste la pelota y cuántas veces la arrastraste.
+            Para conocer los mementos de relajación, o de enfoque y persistencia. Esto guarda cuatro datos cada vez que cierras el fidget: cuándo lo abriste, cuántos minutos estuvo abierto, cuántas veces lanzaste y cuántas veces arrastraste.
           </p>
           <p className="text-sm text-deep-text opacity-70 leading-relaxed mb-5">
-            No se graba nada de lo que ocurre en la pantalla. Sirve para saber si una herramienta como esta le hace sentido a alguien, no para evaluarte a ti. Puedes cambiar de opinión cuando quieras desde Preferencias.
+            No se graba nada de lo que ocurre en la pantalla. Sirve para saber si una herramienta como esta tiene sentido para ti. Puedes cambiar de opinión cuando quieras desde Preferencias.
           </p>
 
           <div className="space-y-2">
