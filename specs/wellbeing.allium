@@ -12,10 +12,11 @@ use "./participant.allium" as participant
 -- Dependencies: Participant defined in participant.allium
 
 -- The fidget tool provides a physics-based interactive toy for sensory regulation
--- and focus. Usage is always optional and never required, but sessions are logged
--- and included in the data export so researchers can understand self-regulation
--- patterns over the study period. The tool is always accessible and never gated
--- by study progression.
+-- and focus. Usage is always optional and never required. Sessions are logged
+-- only if the participant explicitly grants telemetry consent on the
+-- FidgetIntroductionView screen. Logged sessions are included in the data
+-- export so researchers can understand self-regulation patterns over the study
+-- period. The tool is always accessible and never gated by study progression.
 
 ------------------------------------------------------------
 -- Entities
@@ -68,6 +69,7 @@ rule FidgetSessionStarted {
 rule FidgetSessionEnded {
     when: ParticipantClosesFidgetTool(session, final_shots, final_drags)
     requires: session.status = active
+    requires: session.participant.fidget_telemetry_consent = granted
     ensures:
         session.status = ended
         session.ended_at = now
@@ -82,16 +84,49 @@ rule FidgetSessionEnded {
         -- on close, so no partial session data is persisted.
 }
 
--- Fidget introduction (onboarding)
+-- Fidget telemetry consent
+-- NOTE: fidget_telemetry_consent (granted | denied) is a field on Participant,
+-- defined in participant.allium. Rules here reference but do not declare it.
 
-rule FidgetIntroAcknowledged {
-    when: ParticipantAcknowledgesFidgetIntro(p)
-    requires: p.status = active and not p.fidget_intro_seen
-    ensures: p.fidget_intro_seen = true
+rule FidgetTelemetryConsentRevoked {
+    when: ParticipantRevokesFidgetConsent(p)
+    requires: p.status = active and p.fidget_telemetry_consent = granted
+    ensures: p.fidget_telemetry_consent = denied
 
     @guidance
-        -- Routing to the dashboard after this step is handled by the
-        -- LaunchRouter in participant.allium; this rule only sets the flag.
+        -- Revocation is available from the SensorySettings screen (Preferencias).
+        -- On revocation the participant is offered the option to delete
+        -- accumulated fidget logs; see FidgetLogsDeletedOnRevocation.
+}
+
+rule FidgetLogsDeletedOnRevocation {
+    when: ParticipantDeletesFidgetLogs(p)
+    requires: p.status = active and p.fidget_telemetry_consent = denied
+    ensures:
+        for s in FidgetSessions where participant = p:
+            not exists s
+
+    @guidance
+        -- Deletion is optional and offered at the moment of consent revocation.
+        -- Once deleted, fidget session data cannot be recovered.
+}
+
+-- Fidget introduction (onboarding)
+
+rule FidgetIntroCompleted {
+    when: ParticipantCompletesFidgetIntro(p, consent_granted)
+    requires: p.status = active and not p.fidget_intro_seen
+    ensures:
+        p.fidget_intro_seen = true
+        if consent_granted:
+            p.fidget_telemetry_consent = granted
+        else:
+            p.fidget_telemetry_consent = denied
+
+    @guidance
+        -- The participant must actively choose whether to allow fidget session
+        -- logging before proceeding. Routing to the dashboard after this step
+        -- is handled by the LaunchRouter in participant.allium.
 }
 
 ------------------------------------------------------------
@@ -101,6 +136,11 @@ rule FidgetIntroAcknowledged {
 invariant ActiveSessionBelongsToActiveParticipant {
     for s in FidgetSessions:
         s.status = active implies s.participant.status = active
+}
+
+invariant FidgetSessionLoggedOnlyWithConsent {
+    for s in FidgetSessions:
+        s.status = ended implies s.participant.fidget_telemetry_consent = granted
 }
 
 invariant EndedSessionHasDuration {
@@ -148,18 +188,23 @@ surface FidgetIntroductionView {
     facing player: ActiveParticipant
 
     provides:
-        ParticipantAcknowledgesFidgetIntro(player)
+        ParticipantCompletesFidgetIntro(player, consent_granted)
             when not player.fidget_intro_seen
 
     @guarantee ShowsOnce
         -- Shown exactly once, between the permissions screen and the dashboard,
         -- during PWA onboarding. Once fidget_intro_seen is true, this surface
         -- is never reached again.
+    @guarantee ConsentIsExplicit
+        -- The participant must actively choose whether to allow fidget session
+        -- logging before proceeding. The "Continuar" button is disabled until
+        -- a choice is made.
     @guidance
         -- The screen shows the fidget button (orbit icon, indigo circle) so the
-        -- participant can recognise it later in the dashboard. This is a passive
-        -- introduction, not an interactive session. The participant acknowledges
-        -- and proceeds.
+        -- participant can recognise it later in the dashboard. Below the
+        -- introduction, a consent block with two radio buttons asks whether the
+        -- participant agrees to fidget session logging for research purposes.
+        -- The choice is revocable later from Preferencias (SensorySettings).
 }
 
 ------------------------------------------------------------
