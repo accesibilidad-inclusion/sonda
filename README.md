@@ -3,7 +3,7 @@
 **Sonda** es una Aplicación Web Progresiva (PWA) diseñada como una sonda de diseño (design probe) para estudiantes universitarios en el espectro autista.
 
 **Deployment:** [https://accesibilidad-inclusion.github.io/sonda](https://accesibilidad-inclusion.github.io/sonda)
-**Versión:** 1.0
+**Versión:** 3.0 (rama `dev`)
 
 Su objetivo es recolectar experiencias cualitativas sobre barreras, facilitadores y estrategias de autorregulación en el entorno académico, respetando la privacidad y las necesidades sensoriales de los participantes. El diseño de actividades está fundamentado en la **Teoría de la Agencia Causal (TAC)**.
 
@@ -39,7 +39,7 @@ Los momentos se desbloquean progresivamente en días hábiles (uno por día o ca
 Los participantes pueden responder a las actividades mediante:
 - Texto
 - Audio
-- Fotografía y video
+- Fotografía
 
 ### 3. Perfil Sensorial Personalizable
 
@@ -51,12 +51,17 @@ La aplicación incluye un menú de accesibilidad cognitiva y sensorial:
 
 ### 4. Herramienta de Regulación (Fidget)
 
-Incluye una herramienta interactiva basada en **Matter.js** (motor de física 2D): el usuario arrastra y suelta una pelota para derribar torres de cubos coloridos. Siempre accesible, sin importar el avance en los momentos del estudio. El uso se registra pasivamente (disparos, arrastres, duración) para entender los patrones de necesidad de regulación. Ver [formato de datos](./FIDGET_DATA_FORMAT.md).
+Incluye una herramienta interactiva basada en **Matter.js** (motor de física 2D): el usuario arrastra y suelta una pelota para derribar torres de cubos coloridos. Siempre accesible, sin importar el avance en los momentos del estudio.
+
+El registro de uso (disparos, arrastres, duración) es **opt-in**: se activa solo si el participante otorga consentimiento explícito durante la pantalla introductoria del fidget, y puede revocarse desde Preferencias en cualquier momento. Ver [formato de datos y política de consentimiento](./FIDGET_DATA_FORMAT.md).
 
 ### 5. Privacidad y Modelo de Datos "Local-First"
 
-- **Almacenamiento Local:** todos los datos (respuestas y configuraciones) se guardan exclusivamente en el `localStorage` del dispositivo del usuario.
-- **Envío Proactivo:** no hay envío silencioso de datos a un servidor. El usuario debe explícitamente presionar "Enviar Datos", lo cual descarga un archivo JSON y abre su cliente de correo para enviarlo manualmente al equipo de investigación.
+- **Almacenamiento:** los datos de progreso y logs de fidget se guardan en **IndexedDB** del dispositivo. Los flags de sesión (consentimiento, onboarding, perfil sensorial) se guardan en `localStorage`. No hay servidor ni sincronización en la nube.
+- **Exportación selectiva y cifrada:** el participante accede a una pantalla de revisión con tres checkboxes (bitácora, mensaje al futuro, uso del fidget), todos marcados por defecto. Al confirmar, se genera un archivo `.sonda` cifrado con **RSA-OAEP-256 + AES-256-GCM**. Solo el equipo investigador con la clave privada puede leer el contenido.
+- **Envío proactivo:** en móvil (iOS/Android), el share sheet del sistema permite adjuntar el archivo directamente. En escritorio, se descarga y el participante lo adjunta manualmente al correo.
+- **Retiro explícito:** el participante puede retirarse del estudio desde "Ayuda" → "Retirarse del estudio", lo que abre un correo pre-redactado al equipo. El borrado de datos del dispositivo es una acción separada y confirma antes de ejecutarse.
+- **Herramienta de descifrado:** `tools/descifrar.html` es una página HTML autocontenida (sin dependencias externas) para que el equipo investigador descifre los archivos `.sonda` localmente, sin enviar datos a internet.
 
 ## Configuración Técnica
 
@@ -66,6 +71,16 @@ El proyecto está construido con:
 - **Tailwind CSS**
 - **Lucide React** (iconos)
 - **Matter.js** (motor de física 2D para el Fidget)
+
+### Servicios principales
+
+| Archivo | Rol |
+|---------|-----|
+| `services/db.ts` | Wrapper de IndexedDB (`idbGet`, `idbSet`, `idbClear`, `requestPersistence`) |
+| `services/migration.ts` | Migración one-shot de localStorage → IndexedDB al arrancar |
+| `services/crypto.ts` | Cifrado de exportaciones (RSA-OAEP-256 + AES-256-GCM) |
+| `services/storageService.ts` | Fachada de persistencia: progreso (IDB), logs (IDB), flags (localStorage) |
+| `tools/descifrar.html` | Herramienta offline para descifrar archivos `.sonda` (solo equipo investigador) |
 
 ### Variables de Entorno y Constantes
 
@@ -82,26 +97,17 @@ Existe una constante `IS_DEVELOPER_MODE`:
 export const IS_DEVELOPER_MODE = true;
 ```
 
-## Estructura de Datos (JSON exportado)
+## Estructura de Datos (esquema 2.0)
 
-Al exportar los datos desde el menú "Preferencias", se genera un archivo JSON:
+Al exportar, se genera un archivo `.sonda` cifrado. Al descifrarlo con `tools/descifrar.html`, el JSON tiene esta forma (esquema 2.0):
 
 ```json
 {
-  "exportedAt": "2025-10-27T10:00:00.000Z",
-  "studyStartDate": "2025-10-01T09:00:00.000Z",
-  "deviceInfo": {
-    "userAgent": "Mozilla/5.0...",
-    "screen": { "width": 390, "height": 844 }
-  },
-  "sensoryProfile": {
-    "theme": "default",
-    "fontSize": "normal",
-    "reducedMotion": false,
-    "dyslexiaFont": false,
-    "sound": "off",
-    "soundVolume": 0.5
-  },
+  "schemaVersion": "2.0",
+  "exportedAt": "2026-08-12T10:00:00.000Z",
+  "studyStartDate": "2026-07-01T09:00:00.000Z",
+  "seleccion": { "bitacora": true, "mensajeAlFuturo": true, "fidget": true },
+  "omitido":   { "bitacora": false, "mensajeAlFuturo": false, "fidget": false },
   "progress": [
     {
       "id": 1,
@@ -124,18 +130,22 @@ Al exportar los datos desde el menú "Preferencias", se genera un archivo JSON:
       ]
     }
   ],
+  "sensoryProfile": { "theme": "calm", "fontSize": "normal", "reducedMotion": false, "dyslexiaFont": false, "sound": "off", "soundVolume": 0.5 },
   "usageLogs": [
     {
-      "timestamp": "2025-10-27T10:05:00.000Z",
       "type": "FIDGET_SESSION",
-      "startTime": "2025-10-27T10:04:20.000Z",
+      "startTime": "2026-08-12T10:04:20.000Z",
       "durationSeconds": 45.2,
       "shots": 8,
-      "drags": 12
+      "drags": 12,
+      "timestamp": "2026-08-12T10:05:05.000Z"
     }
-  ]
+  ],
+  "deviceInfo": { "userAgent": "Mozilla/5.0...", "screen": { "width": 390, "height": 844 } }
 }
 ```
+
+Si el participante omitió alguna sección, el campo `omitido.<sección>` será `true` y el contenido correspondiente (`progress` sin esos momentos, o `usageLogs: []`) lo reflejará.
 
 ## Instalación y Ejecución
 

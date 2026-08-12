@@ -10,9 +10,19 @@ El fidget es un juego interactivo de física 2D (basado en Matter.js) donde el u
 
 Este juego proporciona una experiencia satisfactoria y predecible de causa-efecto, útil para la autorregulación.
 
+## Consentimiento requerido
+
+**Las sesiones solo se registran si el participante otorgó consentimiento explícito** durante la pantalla `FidgetIntroScreen` (antes de usar el fidget por primera vez). El consentimiento es:
+
+- **Opt-in**: el registro está desactivado por defecto; el participante elige activarlo.
+- **Revocable**: desde Preferencias → "Registro del Fidget", el participante puede desactivarlo en cualquier momento. Al revocar, **todos los logs previos se eliminan** de IndexedDB.
+- **Persistente**: la decisión se guarda en `localStorage` (`sonda_fidget_consent: { granted, decidedAt }`).
+
+Si el participante no otorgó consentimiento, ninguna sesión se guarda, independientemente del uso del fidget.
+
 ## Sesión de Fidget Guardada
 
-Cuando un usuario termina una sesión de fidget, se guarda la siguiente estructura en `usageLogs`:
+Cuando un usuario termina una sesión de fidget (y tiene consentimiento activo), se guarda la siguiente estructura en IndexedDB (`sonda_usage`):
 
 ```json
 {
@@ -37,15 +47,20 @@ Cuando un usuario termina una sesión de fidget, se guarda la siguiente estructu
 
 ### Usar en código:
 ```typescript
-const logs = storageService.loadUsageLogs();
-const fidgetSessions = logs.filter(log => log.type === 'FIDGET_SESSION');
+// loadUsageLogs es async (almacenamiento en IndexedDB)
+const logs = await storageService.loadUsageLogs();
+const fidgetSessions = logs.filter((log: any) => log.type === 'FIDGET_SESSION');
 ```
 
-### En el archivo exportado:
-Los datos de fidget se incluyen automáticamente en `usageLogs` cuando se exportan:
+### En el archivo exportado (.sonda):
+El archivo `.sonda` es un sobre cifrado (RSA-OAEP-256 + AES-256-GCM). Al descifrarlo con `tools/descifrar.html`, el JSON descifrado tiene esquema 2.0:
+
 ```json
 {
+  "schemaVersion": "2.0",
   "exportedAt": "2026-02-11T14:35:00.000Z",
+  "seleccion": { "bitacora": true, "mensajeAlFuturo": true, "fidget": true },
+  "omitido":   { "bitacora": false, "mensajeAlFuturo": false, "fidget": false },
   "usageLogs": [
     {
       "type": "FIDGET_SESSION",
@@ -54,11 +69,12 @@ Los datos de fidget se incluyen automáticamente en `usageLogs` cuando se export
       "shots": 8,
       "drags": 12,
       "timestamp": "2026-02-11T14:31:30.456Z"
-    },
-    { "type": "FIDGET_SESSION", ... }
+    }
   ]
 }
 ```
+
+> Si el participante **deseleccionó** la sección fidget en la pantalla de exportación, `usageLogs` vendrá como `[]` y `omitido.fidget` será `true`.
 
 ## Interpretación de Datos
 
