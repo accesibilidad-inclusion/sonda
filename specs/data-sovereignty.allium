@@ -5,8 +5,9 @@ use "./participant.allium" as participant
 use "./research.allium" as research
 use "./wellbeing.allium" as wellbeing
 
--- Scope: Participant data protection, explicit export flow, and safe deletion
--- Includes: Export flow, deletion confirmation gates, clear-all-data
+-- Scope: Participant data protection, selective export, end-to-end encryption, and safe deletion
+-- Includes: Export selection flow, encrypted .sonda file production, deletion confirmation gates,
+--           clear-all-data, withdrawal contact surface
 -- Excludes:
 --   - Participant consent and identity (see participant.allium)
 --   - Research content and responses (see research.allium)
@@ -20,6 +21,18 @@ use "./wellbeing.allium" as wellbeing
 -- There is no background synchronisation, analytics, or telemetry.
 
 ------------------------------------------------------------
+-- Value Types
+------------------------------------------------------------
+
+value ExportSelection {
+    bitacora: Boolean              -- Moments 1–11 responses (all activities)
+    mensajeAlFuturo: Boolean       -- Closing moment (alwaysVisible) responses
+    fidget: Boolean                -- FidgetSession logs (only if consent granted)
+}
+-- Default: all fields true. Participant may deselect any section.
+-- Sections omitted from selection appear as { omitido: true } in the payload.
+
+------------------------------------------------------------
 -- Contracts
 ------------------------------------------------------------
 
@@ -28,15 +41,20 @@ contract DataSovereignty {
         -- All data transmission requires an explicit, confirmed participant action.
         -- The system never initiates outbound network connections carrying
         -- participant data. No analytics, no telemetry, no passive sync.
+        -- This invariant also applies to generative AI / LLM tools: no participant
+        -- data (responses, media, fidget logs, or identifiers) may be sent to
+        -- any AI service — neither by the app nor by the research team using
+        -- the decryption tool — without a separate, specific ethics approval.
 
-    @invariant LocalStorageOnly
+    @invariant DeviceStorageOnly
         -- All participant data (responses, consent record, sensory profile,
-        -- fidget sessions) is stored exclusively on the participant's device.
+        -- fidget sessions) is stored exclusively on the participant's device,
+        -- in IndexedDB (primary) and localStorage (boolean flags only).
         -- The system has no server-side storage component.
 
     @invariant ExportAlwaysConfirmed
-        -- A data export is never initiated without a preceding explicit
-        -- confirmation from the participant in the same session.
+        -- A data file is never created without a preceding explicit selection
+        -- and confirmation from the participant in the same session.
 
     @invariant DeletionAlwaysConfirmed
         -- No response, momento record, or participant data is deleted without
@@ -45,54 +63,94 @@ contract DataSovereignty {
     @invariant IrreversibilityMadeExplicit
         -- The clear-all-data action presents a clear, plain-language warning
         -- that the operation cannot be undone before asking for confirmation.
+
+    @invariant ExportIsEncrypted
+        -- Every exported data file is encrypted end-to-end using hybrid encryption
+        -- (RSA-OAEP-256 wrapping a one-time AES-256-GCM session key) before it
+        -- leaves the device. The decryption key is never stored in the app bundle
+        -- or transmitted with the file. Only the designated researcher holding the
+        -- private key can read the plaintext.
 }
 
 ------------------------------------------------------------
 -- Rules
 ------------------------------------------------------------
 
--- Data export flow (two-step: request → confirm → export)
+-- Data export flow (select → create → share/download → email)
 
 rule DataExportRequested {
     when: ParticipantRequestsExport(p)
     requires: p.status in {active, completed}
-    ensures: ExportConfirmationPending(p)
+    ensures: ExportReviewPending(p)
 
     @guidance
         -- Data export is always available once the participant is active,
         -- regardless of study progression. Partial responses can be exported.
         -- Export is not gated on study completion.
+        -- A participant with status withdrawn cannot request a new export
+        -- (their data was cleared at withdrawal).
 }
 
-rule DataExportConfirmed {
-    when: ParticipantConfirmsExport(p)
-    ensures:
-        DataFileDownloaded(participant: p, filename: export_filename(p), contents: export_payload(p))
-        EmailClientOpened(recipient: participant/config.researcher_email, subject: export_email_subject(p))
+rule ExportSelectionReviewed {
+    when: ParticipantSubmitsExportSelection(p, selection: ExportSelection)
+    requires:
+        ExportReviewPending(p)
+        selection.bitacora or selection.mensajeAlFuturo or selection.fidget
+    ensures: ExportFileCreating(p, selection)
 
     @guidance
-        -- The export produces a JSON file downloaded to the device. Separately,
-        -- the device email client is opened with the researcher's address and
-        -- study subject pre-filled. The participant must manually attach the
-        -- downloaded file. This two-step design (download then manual attach)
-        -- ensures the participant is aware that data is being sent.
+        -- All three sections are selected by default. The participant may deselect
+        -- any section before creating the file. At least one section must remain
+        -- selected; the create button is disabled when none are checked.
+        -- Deselected sections appear as { omitido: true } in the encrypted payload,
+        -- not as absent keys, so the schema remains consistent for analysis tools.
+        -- If fidget is selected but consent was denied, the fidget block in the
+        -- payload will contain { omitido: true } regardless of the checkbox state.
+}
+
+rule DataExportCreated {
+    when: ExportFileCreating(p, selection)
+    ensures:
+        EncryptedSondaFileReady(
+            participant: p,
+            filename: export_filename(p),       -- date-stamped, .sonda extension
+            contents: encrypted_export(export_payload(p, selection))
+        )
+        ExportSharingPending(p)
+
+    @guidance
+        -- The export produces a single encrypted binary file with the .sonda extension.
+        -- Encryption is hybrid: a fresh AES-256-GCM key encrypts the JSON payload;
+        -- the AES key is then wrapped with the project's RSA-OAEP-256 public key
+        -- (embedded in the app bundle — not secret). The resulting envelope contains:
+        --   { schemaVersion, algorithm, keyId, encryptedKey (b64), iv (b64), ciphertext (b64) }
+        -- Only the researcher holding the matching private key can decrypt it.
         --
-        -- The exported payload includes:
-        --   progress (all momentos, activities, responses with content),
-        --   sensory_profile,
-        --   fidget session logs (started_at, duration, shots, drags),
-        --   consent timestamp,
-        --   device metadata (user agent, screen dimensions),
-        --   export timestamp.
+        -- On iOS/Android (when navigator.canShare({ files }) is true):
+        --   The share sheet opens immediately with the file attached.
+        -- On desktop or unsupported browsers:
+        --   The file is downloaded to the device and the participant is instructed
+        --   to attach it manually when sending email.
+}
+
+rule DataExportShared {
+    when: ParticipantSharesExportFile(p)
+    ensures: ExportComplete(p)
+
+    @guidance
+        -- Sharing via the system share sheet (iOS/Android) or manual email attach
+        -- (desktop) counts as export complete. The app transitions to a success state
+        -- showing confirmation and an "Enviar por correo" mailto shortcut
+        -- (pre-filled recipient and subject; participant attaches the file manually).
 }
 
 rule DataExportCancelled {
     when: ParticipantCancelsExport(p)
-    ensures: ExportConfirmationPending(p)
+    ensures: not ExportReviewPending(p)
 
     @guidance
-        -- No file is downloaded and no email client is opened. The app returns
-        -- to the state before the export was requested.
+        -- No file is created and no data leaves the device.
+        -- The app returns to the state before the export was requested.
 }
 
 -- Response deletion (two-step: request → confirm → delete)
@@ -141,6 +199,7 @@ rule ClearAllDataConfirmed {
         -- ParticipantInitialized fires as if it were a first-time user.
         -- This action is irreversible; there is no recovery path.
         -- The confirmation step must use plain language and avoid euphemisms.
+        -- Both IndexedDB and localStorage are wiped.
 }
 
 rule ClearAllDataCancelled {
@@ -160,6 +219,12 @@ invariant ExportRequiresConsentedParticipant {
         p.status in {active, completed} implies p.has_consented
 }
 
+invariant FidgetExportRequiresConsent {
+    for p in participant/Participants:
+        ExportSelection.fidget = true implies p.fidget_telemetry_consent = granted
+    -- If consent is denied, the fidget block is omitted regardless of checkbox state.
+}
+
 ------------------------------------------------------------
 -- Actor Declarations
 ------------------------------------------------------------
@@ -172,13 +237,28 @@ actor DataOwner {
 -- Surfaces
 ------------------------------------------------------------
 
+surface ExportReviewSurface {
+    facing owner: DataOwner
+
+    provides:
+        ParticipantSubmitsExportSelection(owner, selection: ExportSelection)
+        ParticipantCancelsExport(owner)
+
+    @guarantee SelectionIsVisible
+        -- The participant sees what each section contains (response count for
+        -- bitácora, count for mensajeAlFuturo, and a note about fidget consent
+        -- gating) before committing to file creation.
+    @guarantee AllSectionsDefaultSelected
+        -- All three checkboxes begin checked; the participant opts out, not in.
+    @guarantee AtLeastOneSectionRequired
+        -- The create button is disabled when no section is selected.
+}
+
 surface DataManagementPanel {
     facing owner: DataOwner
 
     provides:
         ParticipantRequestsExport(owner)
-        ParticipantConfirmsExport(owner)
-        ParticipantCancelsExport(owner)
         ParticipantRequestsClearAllData(owner)
         ParticipantConfirmsClearAllData(owner)
         ParticipantCancelsClearAllData(owner)
@@ -194,8 +274,7 @@ surface DataManagementPanel {
         -- and does not offer a default-confirm interaction (e.g., auto-dismiss timer).
     @guidance
         -- The export button and clear-all-data option should be visually distinct
-        -- to prevent accidental triggering. Consider requiring additional friction
-        -- (e.g., typed confirmation) for clear-all-data.
+        -- to prevent accidental triggering.
 }
 
 surface ResponseDeletionConfirmation {
@@ -215,13 +294,41 @@ surface ResponseDeletionConfirmation {
         -- and capture date) so the participant can make an informed decision.
 }
 
+surface WithdrawalSurface {
+    -- Defined in participant.allium (HelpModal withdrawal flow).
+    -- Listed here as a cross-reference: withdrawal triggers ClearAllData as a
+    -- downstream effect; data-sovereignty rules apply to that wipe.
+    -- See participant/WithdrawalSurface for the full surface definition.
+}
+
 ------------------------------------------------------------
 -- Deferred Specifications
 ------------------------------------------------------------
 
-deferred export_filename        -- black box: produces a date-stamped filename string
-deferred export_payload         -- black box: serialises all participant data to JSON
-deferred export_email_subject   -- black box: produces the pre-filled email subject line
+deferred export_filename
+    -- Produces a date-stamped filename string with the .sonda extension.
+    -- Format: sonda_YYYY-MM-DD_HHMMSS.sonda
+
+deferred export_payload(p, selection: ExportSelection)
+    -- Serialises participant data to JSON according to schema version 2.0.
+    -- Sections not in selection appear as { omitido: true } in the envelope.
+    -- Payload structure:
+    --   { schemaVersion: "2.0", exportedAt, studyStartDate,
+    --     bitacora: { ... } | { omitido: true },
+    --     mensajeAlFuturo: { ... } | { omitido: true },
+    --     fidget: { ... } | { omitido: true } }
+
+deferred encrypted_export(payload_json)
+    -- Wraps the JSON payload in a hybrid encryption envelope:
+    --   1. Generate a one-time AES-256-GCM key and IV.
+    --   2. Encrypt payload_json with AES-GCM.
+    --   3. Wrap the AES key with the project RSA-OAEP-256 public key (keyId: sonda-v3-2026).
+    --   4. Return: { schemaVersion, algorithm: "RSA-OAEP-256+AES-256-GCM",
+    --               keyId, encryptedKey (b64), iv (b64), ciphertext (b64) }
+    -- The private key is held exclusively by the researcher; it is never in the bundle.
+
+deferred export_email_subject
+    -- Produces the pre-filled email subject line for the researcher submission email.
 
 ------------------------------------------------------------
 -- Open Questions
@@ -229,5 +336,4 @@ deferred export_email_subject   -- black box: produces the pre-filled email subj
 
 open question "Should the app prevent the operating system from backing up response data to cloud services (iCloud, Google Drive)? If so, how is this communicated to the participant and enforced technically?"
 open question "Should a log of past export timestamps be maintained, so the participant can confirm they have successfully sent data to the researcher?"
-open question "Is there a mechanism for the researcher to verify that exported data has not been altered after export?"
 open question "Should the export include the participant's SensoryProfile change history (if tracked) or only the current profile?"

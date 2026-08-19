@@ -34,13 +34,14 @@ enum PermissionStatus { not_requested | granted | denied }
 ------------------------------------------------------------
 
 entity Participant {
-    status: unstarted | consented | active | completed
+    status: unstarted | consented | active | completed | withdrawn
 
     transitions status {
         unstarted -> consented
         consented -> active
         active -> completed
-        terminal: completed
+        active -> withdrawn
+        terminal: completed, withdrawn
     }
 
     sensory_profile: SensoryProfile
@@ -49,6 +50,7 @@ entity Participant {
     has_seen_welcome: Boolean
     has_seen_permissions_screen: Boolean
     fidget_intro_seen: Boolean
+    fidget_telemetry_consent: not_decided | granted | denied
 
     -- Relationships
     consent: ConsentRecord with participant = this
@@ -58,7 +60,7 @@ entity Participant {
     has_consented: consent != null
     camera_granted: permissions.any(p => p.kind = camera and p.status = granted)
     microphone_granted: permissions.any(p => p.kind = microphone and p.status = granted)
-    onboarding_complete: has_consented and has_seen_welcome and has_seen_permissions_screen and fidget_intro_seen
+    onboarding_complete: has_consented and has_seen_welcome and has_seen_permissions_screen and fidget_intro_seen and fidget_telemetry_consent != not_decided
 
     invariant ValidNoiseVolume {
         sensory_profile.noise_volume >= 0.0 and sensory_profile.noise_volume <= 1.0
@@ -115,6 +117,7 @@ rule ParticipantInitialized {
             has_seen_welcome: false,
             has_seen_permissions_screen: false,
             fidget_intro_seen: false,
+            fidget_telemetry_consent: not_decided,
             sensory_profile: {
                 theme: calm,
                 font_size: normal,
@@ -267,6 +270,46 @@ rule SensoryProfileUpdated {
     ensures: participant.sensory_profile = new_profile
 }
 
+-- Fidget telemetry consent (onboarding)
+
+rule FidgetTelemetryConsentDecided {
+    when: ParticipantCompletesFidgetIntro(p, consent_granted)
+    requires: p.fidget_telemetry_consent = not_decided
+    ensures:
+        p.fidget_intro_seen = true
+        p.fidget_telemetry_consent = granted when consent_granted = true
+        p.fidget_telemetry_consent = denied  when consent_granted = false
+
+    @guidance
+        -- The FidgetIntroductionView requires a choice before the participant
+        -- can proceed. The "Continuar" button is disabled until one of the two
+        -- radio options is selected. This guarantees fidget_telemetry_consent
+        -- is never left as not_decided after onboarding.
+        -- NOTE: wellbeing.allium has a corresponding FidgetIntroCompleted rule
+        -- that handles the same event for fidget session logging concerns.
+        -- Coordinate changes between the two rules.
+}
+
+-- Withdrawal
+
+rule WithdrawalDeclared {
+    when: ParticipantDeclaresWithdrawal(p)
+    requires: p.status = active
+    ensures: p.status = withdrawn
+
+    @guidance
+        -- Withdrawal is always an explicit, declared action. It is never inferred
+        -- from inactivity, missed sessions, or any usage pattern. A participant
+        -- who stops using the app for days or weeks without declaring withdrawal
+        -- remains active. The consent document (point 7) makes this explicit.
+        --
+        -- Declaration happens via the "Quiero retirarme" button in HelpModal,
+        -- which opens a pre-composed email to the researcher. The researcher
+        -- then removes the participant from the study on the server side.
+        -- Local data is not automatically deleted on withdrawal; the participant
+        -- is offered the option separately.
+}
+
 ------------------------------------------------------------
 -- Invariants
 ------------------------------------------------------------
@@ -301,6 +344,12 @@ invariant WelcomePrecedesPermissionsScreen {
 invariant OnboardingPrecedesActive {
     for p in Participants:
         p.status = active implies p.has_consented and p.has_seen_welcome and p.has_seen_permissions_screen
+}
+
+invariant WithdrawalIsNeverInferred {
+    -- A participant's status can only become withdrawn through an explicit
+    -- ParticipantDeclaresWithdrawal event. No time-based, inactivity-based,
+    -- or pattern-based inference may produce a status = withdrawn transition.
 }
 
 ------------------------------------------------------------
@@ -427,20 +476,51 @@ surface SensorySettingsPanel {
 
     exposes:
         participant.sensory_profile
+        participant.fidget_telemetry_consent
 
     provides:
         ParticipantUpdatesSensoryProfile(participant, new_profile)
+        ParticipantRevokesFidgetConsent(participant)
+            when participant.fidget_telemetry_consent = granted
+        ParticipantGrantsFidgetConsent(participant)
+            when participant.fidget_telemetry_consent = denied
 
     @guidance
         -- Accessible at any time during the active study. Changes take effect
         -- immediately. Theme, font size, dyslexia font, reduced motion, and
         -- background noise are all independently configurable.
+        -- Fidget telemetry consent can be toggled here after the initial
+        -- decision made during onboarding.
+}
+
+surface WithdrawalSurface {
+    facing participant: ActiveParticipant
+
+    provides:
+        ParticipantDeclaresWithdrawal(participant)
+
+    @guarantee WithdrawalIsAlwaysReachable
+        -- Accessible at any time during the active study via the Help button.
+        -- The surface opens a pre-composed email to the researcher with subject
+        -- "Quiero retirarme del estudio" and body prompting the participant to
+        -- indicate whether they want their already-sent data deleted.
+    @guarantee DataDeletionIsOfferedSeparately
+        -- The surface also offers local data deletion, with an explicit warning
+        -- that it does not affect data already sent to the researcher.
+    @guidance
+        -- This surface is embedded within HelpModal (the help overlay), not a
+        -- standalone screen. It is always reachable from the floating help button.
 }
 
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
 
-open question "Can a participant withdraw consent after accepting? If so, what happens to their existing data — must it be wiped immediately?"
+-- Resolved: Withdrawal is modelled as an explicit status transition (active -> withdrawn)
+-- triggered by ParticipantDeclaresWithdrawal. Local data is not automatically
+-- deleted; the participant chooses separately. Data already sent to the researcher
+-- is handled by the researcher on request. See WithdrawalDeclared rule and
+-- WithdrawalIsNeverInferred invariant.
 open question "Should changes to sensory settings be recorded and included in the data export, to help researchers understand participant experience over time?"
-open question "Is there a mechanism for the researcher to remotely signal that new content is available, or is all progression strictly time-based?"
+-- Resolved: Progression is completion-based, not time-based. Each momento unlocks
+-- the next as soon as the participant completes it. No remote signaling or schedule needed.

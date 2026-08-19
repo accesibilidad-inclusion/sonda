@@ -2,6 +2,20 @@ import { Moment, ResponseMode } from './types';
 
 export const APP_NAME = "Sonda Digital";
 
+// ── Cifrado de exportaciones ───────────────────────────────────────────────
+// Clave pública RSA-OAEP-256 (3072 bits). Generada el 2026-08-10.
+// La clave privada correspondiente la custodia la investigadora responsable
+// y nunca entra al repositorio. Usar tools/descifrar.html para descifrar.
+export const EXPORT_KEY_ID = 'sonda-v3-2026';
+export const EXPORT_PUBLIC_KEY_JWK: JsonWebKey = {
+  key_ops: ['encrypt'],
+  ext: true,
+  alg: 'RSA-OAEP-256',
+  kty: 'RSA',
+  n: '0iVfiMZxy3vUyHwBCJX2kAR8fShWBHXReUB0E1sJBtJ9Fz_m_ZcLmWYGTxZSKZQoJ0cithx7iFqy4dxKLeU9pxIbvHD1AdcL9hlRK8r3V23Pmj63SZG7kunjH06ZgNQQJ_YBQIxLU1k7NmKX1oHzTINyJefQOvMm5_tq7o4XLW8mk025FKyY2R33LxNgEB66AozudCZbcJosBb_zVmoR3P4u9MkCUtgrAYNf8hl1V431vqZqlf2lgFefOi4E-XeOkJd6FyeLILFfJVd7g-jnVsJZI4LrnuSfyDIZJ-TH2jhj_BnwJA6CNAMw0Xqow852sgIs8EBZ1mmOGsQqUOuzC4IAOzoYml13ER8w4BDGr1h-BNmkg5lcnyowuYPQdsKyvKLLjHdznQcP_f0IqjWHFpT8HZm9bJCn5CCrYqNn3uvX57Fe43hFp3tFKbGsrSEbdt0C4mVzsPUWOsvw5vTUrLQJqmJia_nfSpHBbuCpkTL92qqeebgGUVeB7NOiSPvR',
+  e: 'AQAB',
+};
+
 export const HELP_CONTENT = {
   title: "¿Necesitas apoyo?",
   body: "Si tienes dudas, ansiedad o quieres retirarte del estudio, contáctanos.",
@@ -13,6 +27,7 @@ export const HELP_CONTENT = {
 // 12 momentos, 13 actividades en total.
 // Momento 1 (Entrada) tiene 2 actividades; el resto, 1.
 // Momento 12 (Cierre) siempre visible y opcional.
+// Los momentos se desbloquean secuencialmente al completar el anterior (sin espera por días).
 export const STUDY_CONTENT: Moment[] = [
   {
     id: 1,

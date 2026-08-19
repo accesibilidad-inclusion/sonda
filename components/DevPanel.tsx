@@ -17,7 +17,7 @@ const DevPanel: React.FC<DevPanelProps> = ({ onBack }) => {
 
   const clearData = () => {
     if (confirm('¿Borrar todos los datos y reiniciar la app?')) {
-      storageService.clearAllData();
+      storageService.clearAllData().catch(console.error);
     }
   };
 

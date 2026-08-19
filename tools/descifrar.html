@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sonda Digital — Descifrar sobre</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #222; padding: 2rem; max-width: 700px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 2rem; }
+  .step { background: white; border: 1px solid #ddd; border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+  .step-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 0.5rem; }
+  label { display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.5rem; }
+  input[type="file"] { display: block; width: 100%; padding: 0.5rem; border: 2px dashed #ccc; border-radius: 8px; font-size: 0.9rem; cursor: pointer; }
+  input[type="file"]:hover { border-color: #555; }
+  button { display: block; width: 100%; padding: 0.85rem; background: #1a1a1a; color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 1rem; }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button:hover:not(:disabled) { background: #333; }
+  #error { background: #fff0f0; border: 1px solid #f5c0c0; border-radius: 10px; padding: 1rem 1.25rem; margin-top: 1rem; color: #c00; font-size: 0.9rem; display: none; }
+  #result-section { display: none; margin-top: 1.5rem; }
+  #result-section h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; color: #1a7a1a; }
+  #meta { background: #f0f8f0; border: 1px solid #b8ddb8; border-radius: 10px; padding: 0.75rem 1rem; font-size: 0.8rem; color: #444; margin-bottom: 0.75rem; line-height: 1.6; }
+  pre { background: #1a1a1a; color: #e8e8e8; border-radius: 10px; padding: 1.25rem; font-size: 0.78rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+  .dl-btn { background: #1a5c1a; margin-top: 0.75rem; }
+  .dl-btn:hover { background: #2a7a2a; }
+  .warning { background: #fff8e6; border: 1px solid #f5d87a; border-radius: 10px; padding: 0.75rem 1rem; font-size: 0.82rem; color: #7a5c00; margin-bottom: 1.5rem; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<h1>Sonda Digital — Descifrar sobre</h1>
+<p class="subtitle">Proyecto FONDECYT 1251541 · Uso exclusivo del equipo investigador · Sin conexión a red</p>
+
+<div class="warning">
+  Esta página funciona completamente en tu navegador. No envía ningún dato a internet.
+  Ábrela directamente desde el disco — no la subas a ningún servidor.
+</div>
+
+<div class="step">
+  <div class="step-label">Paso 1</div>
+  <label for="keyFile">Clave privada del equipo (archivo .json)</label>
+  <input type="file" id="keyFile" accept=".json,application/json">
+</div>
+
+<div class="step">
+  <div class="step-label">Paso 2</div>
+  <label for="sobreFile">Sobre cifrado del participante (archivo .sonda)</label>
+  <input type="file" id="sobreFile" accept=".sonda,.json,application/json">
+</div>
+
+<button id="btn" disabled>Descifrar</button>
+
+<div id="error"></div>
+
+<div id="result-section">
+  <h2>✓ Descifrado correctamente</h2>
+  <div id="meta"></div>
+  <pre id="output"></pre>
+  <button class="dl-btn" id="dlBtn">Descargar JSON descifrado</button>
+</div>
+
+<script>
+(function () {
+  const keyInput   = document.getElementById('keyFile');
+  const sobreInput = document.getElementById('sobreFile');
+  const btn        = document.getElementById('btn');
+  const errDiv     = document.getElementById('error');
+  const resultSec  = document.getElementById('result-section');
+  const metaDiv    = document.getElementById('meta');
+  const outputPre  = document.getElementById('output');
+  const dlBtn      = document.getElementById('dlBtn');
+
+  let keyReady = false, sobreReady = false;
+
+  function checkReady() {
+    btn.disabled = !(keyReady && sobreReady);
+  }
+
+  keyInput.addEventListener('change',  () => { keyReady  = !!keyInput.files[0];  checkReady(); });
+  sobreInput.addEventListener('change', () => { sobreReady = !!sobreInput.files[0]; checkReady(); });
+
+  function showError(msg) {
+    errDiv.textContent = msg;
+    errDiv.style.display = 'block';
+    resultSec.style.display = 'none';
+  }
+
+  function clearError() {
+    errDiv.style.display = 'none';
+  }
+
+  function readFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = e => resolve(e.target.result);
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+      reader.readAsText(file);
+    });
+  }
+
+  function fromB64(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  btn.addEventListener('click', async () => {
+    clearError();
+    resultSec.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Descifrando…';
+
+    try {
+      // 1. Cargar clave privada
+      const keyText = await readFile(keyInput.files[0]);
+      const privateJwk = JSON.parse(keyText);
+
+      const privateKey = await crypto.subtle.importKey(
+        'jwk', privateJwk,
+        { name: 'RSA-OAEP', hash: 'SHA-256' },
+        false, ['decrypt']
+      );
+
+      // 2. Cargar sobre
+      const sobreText = await readFile(sobreInput.files[0]);
+      const envelope = JSON.parse(sobreText);
+
+      if (!envelope.encryptedKey || !envelope.iv || !envelope.ciphertext) {
+        throw new Error('El archivo no tiene el formato de sobre cifrado esperado.');
+      }
+
+      // 3. Desenvolver clave AES
+      const encryptedKeyBuf = fromB64(envelope.encryptedKey);
+      const rawAes = await crypto.subtle.decrypt(
+        { name: 'RSA-OAEP' }, privateKey, encryptedKeyBuf
+      );
+
+      const aesKey = await crypto.subtle.importKey(
+        'raw', rawAes, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
+      );
+
+      // 4. Descifrar contenido
+      const iv = new Uint8Array(fromB64(envelope.iv));
+      const ciphertext = fromB64(envelope.ciphertext);
+      const plaintext = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv }, aesKey, ciphertext
+      );
+
+      // 5. Mostrar resultado
+      const json = new TextDecoder().decode(plaintext);
+      const parsed = JSON.parse(json);
+
+      const info = [
+        `Esquema: ${parsed.schemaVersion ?? '—'}`,
+        `Exportado: ${parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleString('es-CL') : '—'}`,
+        `Inicio del estudio: ${parsed.studyStartDate ? new Date(parsed.studyStartDate).toLocaleString('es-CL') : '—'}`,
+        `Clave usada: ${envelope.keyId ?? '—'}`,
+      ].join(' · ');
+
+      metaDiv.textContent = info;
+      outputPre.textContent = JSON.stringify(parsed, null, 2);
+      resultSec.style.display = 'block';
+
+      // Botón de descarga
+      const filename = sobreInput.files[0].name.replace('.sonda', '_descifrado.json');
+      dlBtn.onclick = () => {
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+      };
+
+    } catch (e) {
+      if (e.name === 'OperationError') {
+        showError('Error de descifrado: la clave privada no corresponde a este sobre, o el archivo está dañado.');
+      } else {
+        showError('Error: ' + e.message);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Descifrar';
+    }
+  });
+})();
+</script>
+</body>
+</html>
