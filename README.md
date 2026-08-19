@@ -32,7 +32,7 @@ La experiencia se organiza en **12 momentos** más una entrada sensorial y un ci
 - **Creencias de Control-Acción (Momentos 9–11):** empoderamiento, autoconcepto, control de expectativas
 - **Cierre (opcional):** mensaje al futuro
 
-Los momentos se desbloquean progresivamente en días hábiles (uno por día o cada dos días). Ver [el guión completo](SONDA_QUESTIONS.md).
+Todas las preguntas están disponibles desde el inicio: el participante responde en el orden que prefiera y puede volver a revisar o cambiar sus respuestas en cualquier momento. No hay espera entre momentos — la progresión es libre. El diseño asume que hacer esperar a los participantes autistas no tiene justificación ética ni metodológica. Ver [el guión completo](SONDA_QUESTIONS.md).
 
 ### 2. Respuestas Multimodales
 
@@ -88,14 +88,7 @@ La configuración principal se encuentra en `constants.ts`.
 
 #### Modo Desarrollador
 
-Existe una constante `IS_DEVELOPER_MODE`:
-- `true`: desbloquea todos los momentos, habilita logs detallados en consola y cambia el correo de destino a `hspencer@ead.cl`.
-- `false`: modo producción. Bloquea momentos futuros y dirige los datos a `vanessa.vega@pucv.cl`.
-
-```typescript
-// constants.ts
-export const IS_DEVELOPER_MODE = true;
-```
+Accesible vía `#dev` en la URL (no está enlazado desde la navegación). Activa una insignia visual **DEV** y redirige el correo de exportación a `hspencer@ead.cl` en lugar del correo de la investigadora responsable.
 
 ## Estructura de Datos (esquema 2.0)
 
@@ -113,7 +106,6 @@ Al exportar, se genera un archivo `.sonda` cifrado. Al descifrarlo con `tools/de
       "id": 1,
       "tac_dimension": "entrada",
       "tac_subdimension": "sensorial",
-      "isLocked": false,
       "activities": [
         {
           "id": "1.A",

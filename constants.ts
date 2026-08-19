@@ -27,13 +27,12 @@ export const HELP_CONTENT = {
 // 12 momentos, 13 actividades en total.
 // Momento 1 (Entrada) tiene 2 actividades; el resto, 1.
 // Momento 12 (Cierre) siempre visible y opcional.
-// Los momentos se desbloquean secuencialmente al completar el anterior (sin espera por días).
+// Todas las preguntas están disponibles desde el inicio; el participante responde en el orden que prefiera.
 export const STUDY_CONTENT: Moment[] = [
   {
     id: 1,
     title: "Mi entorno y mis sentidos",
     goal: "Establecer una base de autoconocimiento sensorial sobre la cual se apoyan la autorregulación y el autoconcepto.",
-    isLocked: false,
     alwaysVisible: false,
     activities: [
       {
@@ -63,7 +62,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 2,
     title: "Autonomía",
     goal: "Actuar de manera independiente en los distintos contextos, según los intereses y preferencias personales.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -83,7 +81,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 3,
     title: "Autoiniciación",
     goal: "Iniciar voluntariamente actividades y hacer elecciones conscientes basadas en preferencias e intereses.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -103,7 +100,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 4,
     title: "Control inhibitorio",
     goal: "Detener una respuesta automática o resistir una distracción o un impulso para sostener la acción dirigida a una meta.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -123,7 +119,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 5,
     title: "Autodirección",
     goal: "Usar estrategias para dirigir las acciones hacia un resultado y actuar al servicio de objetivos libremente escogidos.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -143,7 +138,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 6,
     title: "Autorregulación",
     goal: "Identificar el camino hacia una meta y ajustar la dirección cuando surgen retos.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -163,7 +157,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 7,
     title: "Pensar en alternativas",
     goal: "Pensar en diferentes opciones de acción para superar obstáculos.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -183,7 +176,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 8,
     title: "Flexibilidad cognitiva",
     goal: "Adaptarse a cambios inesperados y cambiar de enfoque cuando la situación lo requiere.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -203,7 +195,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 9,
     title: "Empoderamiento",
     goal: "Sentirse capaz de defenderse, expresar los propios derechos, intereses u opiniones.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -223,7 +214,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 10,
     title: "Autorrealización",
     goal: "Conocer las propias capacidades, necesidades y apoyos necesarios para alcanzar una meta.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -243,7 +233,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 11,
     title: "Control de las expectativas",
     goal: "Creencias sobre la conexión entre la propia persona (y sus acciones) y los resultados que obtiene.",
-    isLocked: true,
     alwaysVisible: false,
     activities: [
       {
@@ -263,7 +252,6 @@ export const STUDY_CONTENT: Moment[] = [
     id: 12,
     title: "Mensaje al futuro",
     goal: "Conectar el esfuerzo presente con la proyección personal.",
-    isLocked: false,
     alwaysVisible: true, // Siempre visible, siempre al final
     activities: [
       {

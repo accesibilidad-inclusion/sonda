@@ -50,7 +50,6 @@ export interface Moment {
   id: number;
   title: string;
   goal: string;
-  isLocked: boolean;
   alwaysVisible: boolean; // true solo para el Cierre (Momento 12)
   activities: Activity[];
 }

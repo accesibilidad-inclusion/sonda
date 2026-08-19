@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppScreen, Activity, Moment, SensoryProfile, ResponseItem } from './types';
-import { LifeBuoy, CheckCircle, Lock, ChevronRight, Settings, MessageSquare, Orbit, Download, Infinity } from 'lucide-react';
+import { LifeBuoy, CheckCircle, ChevronRight, Settings, MessageSquare, Orbit, Download, Infinity } from 'lucide-react';
 import HelpModal from './components/HelpModal';
 import FidgetTool from './components/FidgetTool';
 import ActivityView from './components/ActivityView';
@@ -25,20 +25,6 @@ const DEFAULT_PROFILE: SensoryProfile = {
   sound: 'off',
   soundVolume: 0.5
 };
-
-// Desbloqueo secuencial: cada momento se habilita cuando el anterior está completo.
-// El modo dev desbloquea todo inmediatamente.
-function applySequentialUnlock(moments: Moment[], devMode: boolean): Moment[] {
-  if (devMode) return moments.map(m => ({ ...m, isLocked: false }));
-  const regular = moments.filter(m => !m.alwaysVisible);
-  return moments.map(moment => {
-    if (moment.alwaysVisible) return { ...moment, isLocked: false };
-    const idx = regular.findIndex(m => m.id === moment.id);
-    if (idx === 0) return { ...moment, isLocked: false };
-    const prev = regular[idx - 1];
-    return { ...moment, isLocked: !prev.activities.every(a => a.isCompleted) };
-  });
-}
 
 function isPWA(): boolean {
   return window.matchMedia('(display-mode: standalone)').matches
@@ -116,7 +102,6 @@ const App = () => {
 
   const handleConsentAccept = () => {
     storageService.saveStartDate(new Date().toISOString());
-    setMoments(prev => applySequentialUnlock(prev, storageService.isDevMode()));
     setScreen(isPWA() ? AppScreen.ONBOARDING_WELCOME : AppScreen.ONBOARDING_INSTALL);
   };
 
@@ -150,9 +135,8 @@ const App = () => {
         return { ...act, isCompleted: updatedResponses.length > 0, responses: updatedResponses };
       })
     }));
-    const withUnlocks = applySequentialUnlock(updated, storageService.isDevMode());
-    setMoments(withUnlocks);
-    const newActive = withUnlocks.flatMap(m => m.activities).find(a => a.id === id);
+    setMoments(updated);
+    const newActive = updated.flatMap(m => m.activities).find(a => a.id === id);
     if (newActive) setActiveActivity(newActive);
   };
 
@@ -166,72 +150,74 @@ const App = () => {
   // --- Dashboard ---
 
   const renderMomentCard = (moment: Moment) => {
-    const isDevMode = storageService.isDevMode();
     const completedCount = moment.activities.filter(a => a.isCompleted).length;
     const totalCount = moment.activities.length;
     const isCierre = moment.alwaysVisible;
+    const allCompleted = completedCount === totalCount;
 
     return (
       <div
         key={moment.id}
-        className={`rounded-2xl border-2 transition-all ${
-          moment.isLocked
-            ? 'bg-calm-bg border-transparent opacity-70'
+        className={`rounded-2xl border-2 transition-all shadow-sm ${
+          allCompleted
+            ? 'bg-green-50 border-green-200'
             : isCierre
-            ? 'bg-card-bg border-calm-blue/30 shadow-sm'
-            : 'bg-card-bg border-soft-gray shadow-sm'
+            ? 'bg-card-bg border-calm-blue/30'
+            : 'bg-card-bg border-soft-gray'
         }`}
       >
         <div className="p-5">
           <div className="flex justify-between items-center mb-2">
-            <span className={`text-xs font-bold tracking-wider uppercase ${isCierre ? 'text-calm-blue' : 'text-calm-blue opacity-70'}`}>
-              {isCierre ? 'Cierre · Opcional' : `Momento ${moment.id}`}
-            </span>
-            {moment.isLocked && <Lock size={14} className="text-soft-gray" />}
-            {!moment.isLocked && completedCount > 0 && (
-              <span className="text-xs text-calm-green font-semibold">
-                {completedCount}/{totalCount} ✓
+            <div className="flex items-center gap-2">
+              {allCompleted && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+              {isCierre && (
+                <span className={`text-xs font-bold tracking-wider uppercase ${allCompleted ? 'text-green-600' : 'text-calm-blue'}`}>
+                  Cierre · Opcional
+                </span>
+              )}
+            </div>
+            {!allCompleted && completedCount > 0 && (
+              <span className="text-xs text-deep-text opacity-50 font-medium">
+                {completedCount}/{totalCount}
               </span>
             )}
           </div>
 
-          <h2 className="text-lg font-bold mb-1 text-deep-text">{moment.title}</h2>
-          <p className="text-sm text-deep-text opacity-60 mb-4 leading-snug">{moment.goal}</p>
+          <h2 className={`text-lg font-bold mb-1 ${allCompleted ? 'text-green-800' : 'text-deep-text'}`}>
+            {moment.title}
+          </h2>
+          <p className={`text-sm mb-4 leading-snug ${allCompleted ? 'text-green-700 opacity-80' : 'text-deep-text opacity-60'}`}>
+            {moment.goal}
+          </p>
 
-          {moment.isLocked ? (
-            <div className="p-3 bg-gray-100 rounded-xl text-gray-500 text-sm">
-              Disponible cuando completes el momento anterior.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {moment.activities.map(act => (
-                <button
-                  key={act.id}
-                  onClick={() => handleActivitySelect(act)}
-                  className={`w-full flex items-center justify-between p-4 rounded-xl text-left transition-colors ${
-                    act.isCompleted
-                      ? 'bg-green-50 text-green-800 border border-green-100'
-                      : 'bg-calm-bg hover:opacity-80 text-deep-text'
-                  }`}
-                >
-                  <div className="flex flex-col min-w-0 pr-2">
-                    <span className="font-medium text-sm truncate">{act.title}</span>
-                    {act.responses.length > 0 && (
-                      <span className="text-xs opacity-60 flex items-center gap-1 mt-0.5">
-                        <MessageSquare size={11} />
-                        {act.responses.length} respuesta{act.responses.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-shrink-0">
-                    {act.isCompleted
-                      ? <CheckCircle size={18} className="text-green-500" />
-                      : <ChevronRight size={18} className="opacity-40" />}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="space-y-2">
+            {moment.activities.map(act => (
+              <button
+                key={act.id}
+                onClick={() => handleActivitySelect(act)}
+                className={`w-full flex items-center justify-between p-4 rounded-xl text-left transition-colors ${
+                  act.isCompleted
+                    ? 'bg-green-100 text-green-800 border border-green-200'
+                    : 'bg-calm-bg hover:opacity-80 text-deep-text'
+                }`}
+              >
+                <div className="flex flex-col min-w-0 pr-2">
+                  <span className="font-medium text-sm truncate">{act.title}</span>
+                  {act.responses.length > 0 && (
+                    <span className="text-xs opacity-60 flex items-center gap-1 mt-0.5">
+                      <MessageSquare size={11} />
+                      {act.responses.length} respuesta{act.responses.length !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-shrink-0">
+                  {act.isCompleted
+                    ? <CheckCircle size={18} className="text-green-500" />
+                    : <ChevronRight size={18} className="opacity-40" />}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -357,7 +343,6 @@ const App = () => {
       {screen === AppScreen.DEV_PANEL && (
         <DevPanel onBack={() => {
           window.location.hash = '';
-          setMoments(prev => applySequentialUnlock(prev, storageService.isDevMode()));
           setScreen(getInitialScreen());
         }} />
       )}

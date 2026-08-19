@@ -58,11 +58,10 @@ entity Moment {
     id: Integer
     title: String
     goal: String
-    status: locked | available | completed
+    status: available | completed
     always_visible: Boolean
 
     transitions status {
-        locked -> available
         available -> completed
         terminal: completed
     }
@@ -112,7 +111,6 @@ entity Response {
 config {
     total_moments: Integer = 12
     total_activities: Integer = 13
-    developer_mode: Boolean = false
     storage_budget_bytes: Integer = 4_500_000
     storage_warning_threshold: Decimal = 0.8
     min_response_size_bytes: Integer = 50_000
@@ -139,52 +137,52 @@ rule StudyContentInitialized {
     when: p: participant/Participant.created
     ensures:
         -- Momento 1 (Entrada): 2 activities — sensory baseline, no TAC dimension
-        let m1 = Moment.created(participant: p, id: 1, status: locked, always_visible: false, title: study_moment_title(1), goal: study_moment_goal(1))
+        let m1 = Moment.created(participant: p, id: 1, status: available, always_visible: false, title: study_moment_title(1), goal: study_moment_goal(1))
         Activity.created(moment: m1, id: "1.A", title: "Mapa de lugares", description: study_activity_description("1.A"), example: study_activity_example("1.A"), allowed_modes: {photo, text, audio}, tac_dimension: null, tac_subdimension: null)
         Activity.created(moment: m1, id: "1.B", title: "Cazadores de ruido y luz", description: study_activity_description("1.B"), example: study_activity_example("1.B"), allowed_modes: {audio, photo, text}, tac_dimension: null, tac_subdimension: null)
 
         -- Momento 2 — Autonomia (Volitiva)
-        let m2 = Moment.created(participant: p, id: 2, status: locked, always_visible: false, title: study_moment_title(2), goal: study_moment_goal(2))
+        let m2 = Moment.created(participant: p, id: 2, status: available, always_visible: false, title: study_moment_title(2), goal: study_moment_goal(2))
         Activity.created(moment: m2, id: "2.1", title: study_activity_title("2.1"), description: study_activity_description("2.1"), example: study_activity_example("2.1"), allowed_modes: {text, audio, photo}, tac_dimension: "Volitiva", tac_subdimension: "Autonomia")
 
         -- Momento 3 — Autoiniciacion (Volitiva)
-        let m3 = Moment.created(participant: p, id: 3, status: locked, always_visible: false, title: study_moment_title(3), goal: study_moment_goal(3))
+        let m3 = Moment.created(participant: p, id: 3, status: available, always_visible: false, title: study_moment_title(3), goal: study_moment_goal(3))
         Activity.created(moment: m3, id: "3.1", title: study_activity_title("3.1"), description: study_activity_description("3.1"), example: study_activity_example("3.1"), allowed_modes: {text, audio}, tac_dimension: "Volitiva", tac_subdimension: "Autoiniciacion")
 
         -- Momento 4 — Control inhibitorio (Volitiva)
-        let m4 = Moment.created(participant: p, id: 4, status: locked, always_visible: false, title: study_moment_title(4), goal: study_moment_goal(4))
+        let m4 = Moment.created(participant: p, id: 4, status: available, always_visible: false, title: study_moment_title(4), goal: study_moment_goal(4))
         Activity.created(moment: m4, id: "4.1", title: study_activity_title("4.1"), description: study_activity_description("4.1"), example: study_activity_example("4.1"), allowed_modes: {text, audio}, tac_dimension: "Volitiva", tac_subdimension: "Control inhibitorio")
 
         -- Momento 5 — Autodireccion (Agencial)
-        let m5 = Moment.created(participant: p, id: 5, status: locked, always_visible: false, title: study_moment_title(5), goal: study_moment_goal(5))
+        let m5 = Moment.created(participant: p, id: 5, status: available, always_visible: false, title: study_moment_title(5), goal: study_moment_goal(5))
         Activity.created(moment: m5, id: "5.1", title: study_activity_title("5.1"), description: study_activity_description("5.1"), example: study_activity_example("5.1"), allowed_modes: {text, audio, photo}, tac_dimension: "Agencial", tac_subdimension: "Autodireccion")
 
         -- Momento 6 — Autorregulacion (Agencial)
-        let m6 = Moment.created(participant: p, id: 6, status: locked, always_visible: false, title: study_moment_title(6), goal: study_moment_goal(6))
+        let m6 = Moment.created(participant: p, id: 6, status: available, always_visible: false, title: study_moment_title(6), goal: study_moment_goal(6))
         Activity.created(moment: m6, id: "6.1", title: study_activity_title("6.1"), description: study_activity_description("6.1"), example: study_activity_example("6.1"), allowed_modes: {photo, audio, text}, tac_dimension: "Agencial", tac_subdimension: "Autorregulacion")
 
         -- Momento 7 — Pensar en alternativas (Agencial)
-        let m7 = Moment.created(participant: p, id: 7, status: locked, always_visible: false, title: study_moment_title(7), goal: study_moment_goal(7))
+        let m7 = Moment.created(participant: p, id: 7, status: available, always_visible: false, title: study_moment_title(7), goal: study_moment_goal(7))
         Activity.created(moment: m7, id: "7.1", title: study_activity_title("7.1"), description: study_activity_description("7.1"), example: study_activity_example("7.1"), allowed_modes: {text, audio}, tac_dimension: "Agencial", tac_subdimension: "Pensar en alternativas")
 
         -- Momento 8 — Flexibilidad cognitiva (Agencial)
-        let m8 = Moment.created(participant: p, id: 8, status: locked, always_visible: false, title: study_moment_title(8), goal: study_moment_goal(8))
+        let m8 = Moment.created(participant: p, id: 8, status: available, always_visible: false, title: study_moment_title(8), goal: study_moment_goal(8))
         Activity.created(moment: m8, id: "8.1", title: study_activity_title("8.1"), description: study_activity_description("8.1"), example: study_activity_example("8.1"), allowed_modes: {text, audio}, tac_dimension: "Agencial", tac_subdimension: "Flexibilidad cognitiva")
 
         -- Momento 9 — Empoderamiento (Creencias de control-accion)
-        let m9 = Moment.created(participant: p, id: 9, status: locked, always_visible: false, title: study_moment_title(9), goal: study_moment_goal(9))
+        let m9 = Moment.created(participant: p, id: 9, status: available, always_visible: false, title: study_moment_title(9), goal: study_moment_goal(9))
         Activity.created(moment: m9, id: "9.1", title: study_activity_title("9.1"), description: study_activity_description("9.1"), example: study_activity_example("9.1"), allowed_modes: {text, audio}, tac_dimension: "Creencias de control-accion", tac_subdimension: "Empoderamiento")
 
         -- Momento 10 — Autorrealizacion / Autoconcepto (Creencias de control-accion)
-        let m10 = Moment.created(participant: p, id: 10, status: locked, always_visible: false, title: study_moment_title(10), goal: study_moment_goal(10))
+        let m10 = Moment.created(participant: p, id: 10, status: available, always_visible: false, title: study_moment_title(10), goal: study_moment_goal(10))
         Activity.created(moment: m10, id: "10.1", title: study_activity_title("10.1"), description: study_activity_description("10.1"), example: study_activity_example("10.1"), allowed_modes: {text, audio}, tac_dimension: "Creencias de control-accion", tac_subdimension: "Autorrealizacion / Autoconcepto")
 
         -- Momento 11 — Control de las expectativas (Creencias de control-accion)
-        let m11 = Moment.created(participant: p, id: 11, status: locked, always_visible: false, title: study_moment_title(11), goal: study_moment_goal(11))
+        let m11 = Moment.created(participant: p, id: 11, status: available, always_visible: false, title: study_moment_title(11), goal: study_moment_goal(11))
         Activity.created(moment: m11, id: "11.1", title: study_activity_title("11.1"), description: study_activity_description("11.1"), example: study_activity_example("11.1"), allowed_modes: {text, audio, photo}, tac_dimension: "Creencias de control-accion", tac_subdimension: "Control de las expectativas")
 
         -- Momento 12 (Cierre): always visible, optional, repeatable
-        let m12 = Moment.created(participant: p, id: 12, status: locked, always_visible: true, title: "Cierre", goal: study_moment_goal(12))
+        let m12 = Moment.created(participant: p, id: 12, status: available, always_visible: true, title: "Cierre", goal: study_moment_goal(12))
         Activity.created(moment: m12, id: "12.1", title: "Mensaje al futuro", description: study_activity_description("12.1"), example: study_activity_example("12.1"), allowed_modes: {audio, photo, text}, tac_dimension: null, tac_subdimension: null)
 
     @guidance
@@ -195,86 +193,6 @@ rule StudyContentInitialized {
         -- Activity IDs use the format "M.X" where M is the momento number and X is
         -- the activity letter or number within that momento.
         -- Momento 1 (Entrada) is the only momento with 2 activities. All others have 1.
-}
-
--- Momento 1 unlocking — available immediately on consent
-
-rule FirstMomentUnlockedOnConsent {
-    when: consent: participant/ConsentRecord.created
-    requires: not config.developer_mode
-    let m1 = Moment{participant: consent.participant, id: 1}
-    requires: exists m1
-    requires: m1.status = locked
-    ensures:
-        m1.status = available
-        m1.unlocked_at = now
-}
-
--- Sequential unlocking — each momento unlocks the next upon completion
-
-rule MomentUnlockedByCompletion {
-    when: completed: Moment.status = completed
-    requires: not config.developer_mode
-    requires: not completed.always_visible
-    let next = Moment{participant: completed.participant, id: completed.id + 1}
-    requires: exists next
-    requires: not next.always_visible
-    requires: next.status = locked
-    ensures:
-        next.status = available
-        next.unlocked_at = now
-
-    @guidance
-        -- Each momento unlocks the next as soon as all its activities are completed.
-        -- There is no time-based schedule: participants progress at their own pace.
-        -- Momento 11 completing does not attempt to unlock Momento 12, because
-        -- Momento 12 (Cierre) is always_visible and handled by CierreUnlockedOnConsent.
-}
-
--- Cierre (Momento 12) unlocking — always visible from consent
-
-rule CierreUnlockedOnConsent {
-    when: consent: participant/ConsentRecord.created
-    requires: not config.developer_mode
-    let cierre = Moment{participant: consent.participant, id: 12}
-    requires: exists cierre
-    requires: cierre.status = locked
-    ensures:
-        cierre.status = available
-        cierre.unlocked_at = now
-
-    @guidance
-        -- The Cierre momento is always visible from the start, positioned at the
-        -- bottom of the dashboard. It is optional (not required for any completion
-        -- state) and can be responded to multiple times. Its always_visible flag
-        -- distinguishes it from other momentos in the UI.
-}
-
--- Momento unlocking — developer mode (all momentos immediately available on consent)
-
-rule AllMomentsUnlockedForDeveloper {
-    when: consent: participant/ConsentRecord.created
-    requires: config.developer_mode
-    ensures:
-        for moment in Moments where participant = consent.participant:
-            moment.status = available
-            moment.unlocked_at = now
-}
-
--- Developer mode toggle (unlocks all locked momentos for the participant)
-
-rule DeveloperModeActivated {
-    when: ToggleDeveloperMode(p)
-    ensures:
-        for moment in Moments where participant = p and status = locked:
-            moment.status = available
-            moment.unlocked_at = now
-
-    @guidance
-        -- When developer mode is activated via the hidden /sonda/dev panel,
-        -- all locked momentos become immediately available regardless of the
-        -- working-day schedule. Already-unlocked momentos are unaffected.
-        -- This is a development/testing facility only.
 }
 
 -- Activity and momento completion
@@ -360,11 +278,6 @@ invariant PhotoRequiresCamera {
         r.mode = photo implies r.activity.moment.participant.camera_granted
 }
 
-invariant LockedMomentsHaveNoResponses {
-    for m in Moments:
-        m.status = locked implies m.activities.all(a => a.responses.count = 0)
-}
-
 invariant CompletedActivityHasResponse {
     for a in Activities:
         a.is_completed implies a.responses.count > 0
@@ -413,17 +326,17 @@ surface StudyDashboard {
                 ActivityView(activity)
 
     @guidance
-        -- Locked momentos are unlocked as soon as the participant completes the
-        -- preceding momento (all its activities answered). No time-based schedule
-        -- applies. The UI indicates a locked momento is waiting for the previous
-        -- one to be completed.
-        -- Completed momentos remain visible but read-only.
+        -- All momentos are available from the start. The participant responds in
+        -- whatever order they prefer, and can revisit and change responses at any time.
+        -- There is no time-based schedule and no prerequisite between momentos.
+        -- When all activities in a momento are completed, the card turns green with
+        -- a visible checkmark, giving the participant clear progress feedback.
+        -- Completed momentos remain fully editable (responses can be replaced or deleted).
         -- A storage indicator at the dashboard level gives the participant a global
         -- view of how much space their data occupies. This is especially relevant
         -- after adding photo responses.
         -- The Cierre momento (always_visible = true) is positioned at the bottom
-        -- of the dashboard and is accessible from the start. It is optional and
-        -- does not count toward any completion gate.
+        -- of the dashboard. It is optional and does not count toward any completion gate.
 }
 
 surface ActivityView {
@@ -496,17 +409,10 @@ surface ActivityView {
 surface DevPanel {
     facing viewer: StudyParticipant
 
-    exposes:
-        config.developer_mode
-
-    provides:
-        ToggleDeveloperMode(viewer)
-
     @guidance
         -- Accessible only at /sonda/dev -- not linked from any navigation.
-        -- Exposes the developer_mode toggle.
-        -- When developer_mode = true, all momentos are immediately available
-        -- regardless of the working-day unlock schedule.
+        -- Shows a DEV badge in the UI and redirects exports to the developer
+        -- email address (hspencer@ead.cl) instead of the researcher's address.
         -- This surface exists for development and testing purposes only.
         -- It must not be discoverable through normal application navigation.
 }
