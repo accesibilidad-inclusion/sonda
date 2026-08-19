@@ -522,4 +522,5 @@ surface WithdrawalSurface {
 -- is handled by the researcher on request. See WithdrawalDeclared rule and
 -- WithdrawalIsNeverInferred invariant.
 open question "Should changes to sensory settings be recorded and included in the data export, to help researchers understand participant experience over time?"
-open question "Is there a mechanism for the researcher to remotely signal that new content is available, or is all progression strictly time-based?"
+-- Resolved: Progression is completion-based, not time-based. Each momento unlocks
+-- the next as soon as the participant completes it. No remote signaling or schedule needed.

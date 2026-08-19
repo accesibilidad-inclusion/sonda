@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppScreen, Activity, Moment, SensoryProfile, ResponseItem } from './types';
-import { LifeBuoy, CheckCircle, Lock, ChevronRight, Settings, MessageSquare, Orbit, CalendarClock, Download, Infinity } from 'lucide-react';
+import { LifeBuoy, CheckCircle, Lock, ChevronRight, Settings, MessageSquare, Orbit, Download, Infinity } from 'lucide-react';
 import HelpModal from './components/HelpModal';
 import FidgetTool from './components/FidgetTool';
 import ActivityView from './components/ActivityView';
@@ -26,17 +26,18 @@ const DEFAULT_PROFILE: SensoryProfile = {
   soundVolume: 0.5
 };
 
-// Añade N días hábiles (lunes-viernes) a una fecha
-function addWorkingDays(start: Date, days: number): Date {
-  if (days === 0) return new Date(start);
-  const result = new Date(start);
-  let added = 0;
-  while (added < days) {
-    result.setDate(result.getDate() + 1);
-    const dow = result.getDay();
-    if (dow !== 0 && dow !== 6) added++;
-  }
-  return result;
+// Desbloqueo secuencial: cada momento se habilita cuando el anterior está completo.
+// El modo dev desbloquea todo inmediatamente.
+function applySequentialUnlock(moments: Moment[], devMode: boolean): Moment[] {
+  if (devMode) return moments.map(m => ({ ...m, isLocked: false }));
+  const regular = moments.filter(m => !m.alwaysVisible);
+  return moments.map(moment => {
+    if (moment.alwaysVisible) return { ...moment, isLocked: false };
+    const idx = regular.findIndex(m => m.id === moment.id);
+    if (idx === 0) return { ...moment, isLocked: false };
+    const prev = regular[idx - 1];
+    return { ...moment, isLocked: !prev.activities.every(a => a.isCompleted) };
+  });
 }
 
 function isPWA(): boolean {
@@ -65,7 +66,6 @@ function getInitialScreen(): AppScreen {
 
 const App = () => {
   const [screen, setScreen] = useState<AppScreen>(getInitialScreen);
-  const [startDate, setStartDate] = useState<string | null>(storageService.loadStartDate());
   // Carga inicial síncrona desde localStorage para render inmediato;
   // el useEffect de montaje la reemplaza con los datos canónicos de IDB.
   const [moments, setMoments] = useState<Moment[]>(() => storageService.loadProgressSync());
@@ -82,6 +82,7 @@ const App = () => {
   useEffect(() => {
     migrateFromLocalStorage()
       .then(() => storageService.loadProgress())
+      .then(data => applySequentialUnlock(data, storageService.isDevMode()))
       .then(setMoments)
       .then(requestPersistence)
       .then(isStorageCritical)
@@ -100,30 +101,6 @@ const App = () => {
 
   useEffect(() => { storageService.saveSensoryProfile(sensoryProfile); }, [sensoryProfile]);
 
-  // Desbloqueo por día hábil
-  useEffect(() => {
-    const devMode = storageService.isDevMode();
-    if (devMode) {
-      setMoments(prev => {
-        if (prev.some(m => m.isLocked)) return prev.map(m => ({ ...m, isLocked: false }));
-        return prev;
-      });
-      return;
-    }
-    if (!startDate) return;
-
-    const start = new Date(startDate);
-    const now = new Date();
-
-    setMoments(prev => prev.map(moment => {
-      if (moment.alwaysVisible) return { ...moment, isLocked: false };
-      const unlockDate = addWorkingDays(start, moment.id - 1);
-      const shouldBeLocked = now < unlockDate;
-      if (moment.isLocked !== shouldBeLocked) return { ...moment, isLocked: shouldBeLocked };
-      return moment;
-    }));
-  }, [startDate, screen]);
-
   // Perfil sensorial
   useEffect(() => {
     document.body.className = `bg-calm-bg text-deep-text font-sans antialiased selection:bg-calm-blue selection:text-white transition-colors duration-300 theme-${sensoryProfile.theme}`;
@@ -138,9 +115,8 @@ const App = () => {
   // --- Handlers de onboarding ---
 
   const handleConsentAccept = () => {
-    const now = new Date().toISOString();
-    storageService.saveStartDate(now);
-    setStartDate(now);
+    storageService.saveStartDate(new Date().toISOString());
+    setMoments(prev => applySequentialUnlock(prev, storageService.isDevMode()));
     setScreen(isPWA() ? AppScreen.ONBOARDING_WELCOME : AppScreen.ONBOARDING_INSTALL);
   };
 
@@ -167,15 +143,16 @@ const App = () => {
   };
 
   const handleActivityUpdate = (id: string, updatedResponses: ResponseItem[]) => {
-    const updatedMoments = moments.map(moment => ({
+    const updated = moments.map(moment => ({
       ...moment,
       activities: moment.activities.map(act => {
         if (act.id !== id) return act;
         return { ...act, isCompleted: updatedResponses.length > 0, responses: updatedResponses };
       })
     }));
-    setMoments(updatedMoments);
-    const newActive = updatedMoments.flatMap(m => m.activities).find(a => a.id === id);
+    const withUnlocks = applySequentialUnlock(updated, storageService.isDevMode());
+    setMoments(withUnlocks);
+    const newActive = withUnlocks.flatMap(m => m.activities).find(a => a.id === id);
     if (newActive) setActiveActivity(newActive);
   };
 
@@ -186,26 +163,9 @@ const App = () => {
     }
   };
 
-  // --- Helpers del dashboard ---
-
-  const getUnlockDate = (momentId: number): Date | null => {
-    if (!startDate) return null;
-    return addWorkingDays(new Date(startDate), momentId - 1);
-  };
-
-  const formatUnlockDate = (date: Date): string => {
-    return date.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
-  };
-
-  // Próximo momento por desbloquear (para mostrar "disponible el...")
-  const nextLockedMoment = moments
-    .filter(m => m.isLocked && !m.alwaysVisible)
-    .sort((a, b) => a.id - b.id)[0];
-
   // --- Dashboard ---
 
   const renderMomentCard = (moment: Moment) => {
-    const unlockDate = getUnlockDate(moment.id);
     const isDevMode = storageService.isDevMode();
     const completedCount = moment.activities.filter(a => a.isCompleted).length;
     const totalCount = moment.activities.length;
@@ -238,10 +198,9 @@ const App = () => {
           <h2 className="text-lg font-bold mb-1 text-deep-text">{moment.title}</h2>
           <p className="text-sm text-deep-text opacity-60 mb-4 leading-snug">{moment.goal}</p>
 
-          {moment.isLocked && unlockDate ? (
-            <div className="flex items-center gap-2 p-3 bg-gray-100 rounded-xl text-gray-500 text-sm">
-              <CalendarClock size={16} className="flex-shrink-0" />
-              <span>Disponible el <span className="font-semibold capitalize">{formatUnlockDate(unlockDate)}</span></span>
+          {moment.isLocked ? (
+            <div className="p-3 bg-gray-100 rounded-xl text-gray-500 text-sm">
+              Disponible cuando completes el momento anterior.
             </div>
           ) : (
             <div className="space-y-2">
@@ -298,17 +257,6 @@ const App = () => {
               </p>
             </div>
           </div>
-
-          {/* Próxima actividad */}
-          {nextLockedMoment && !isDevMode && (() => {
-            const unlockDate = getUnlockDate(nextLockedMoment.id);
-            return unlockDate ? (
-              <div className="mt-4 mb-6 flex items-center gap-2 text-sm text-deep-text opacity-50">
-                <CalendarClock size={14} />
-                <span>Próxima actividad: <span className="font-medium capitalize">{formatUnlockDate(unlockDate)}</span></span>
-              </div>
-            ) : null;
-          })()}
 
           <div className="mt-6 space-y-4">
             {regularMoments.map(renderMomentCard)}
@@ -409,6 +357,7 @@ const App = () => {
       {screen === AppScreen.DEV_PANEL && (
         <DevPanel onBack={() => {
           window.location.hash = '';
+          setMoments(prev => applySequentialUnlock(prev, storageService.isDevMode()));
           setScreen(getInitialScreen());
         }} />
       )}

@@ -27,6 +27,7 @@ export const HELP_CONTENT = {
 // 12 momentos, 13 actividades en total.
 // Momento 1 (Entrada) tiene 2 actividades; el resto, 1.
 // Momento 12 (Cierre) siempre visible y opcional.
+// Los momentos se desbloquean secuencialmente al completar el anterior (sin espera por días).
 export const STUDY_CONTENT: Moment[] = [
   {
     id: 1,
