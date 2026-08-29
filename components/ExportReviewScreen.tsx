@@ -68,12 +68,21 @@ const ExportReviewScreen: React.FC<Props> = ({ moments, onBack }) => {
       setFilename(name);
 
       // Intentar Web Share API con archivo (iOS/Android: adjunta directamente)
-      const file = new File([blob], name, { type: 'application/json' });
+      // Nota: las awaits anteriores pueden agotar el contexto de gesto en algunos browsers;
+      // si share falla por cualquier razón no-abort, caemos al download sin mostrar error.
+      const file = new File([blob], name, { type: 'application/octet-stream' });
+      let shared = false;
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Sonda Digital — datos' });
-        setPhase('ready'); // compartido vía share sheet
-      } else {
-        // Escritorio o navegador sin soporte: descarga manual
+        try {
+          await navigator.share({ files: [file], title: 'Sonda Digital — datos' });
+          shared = true;
+        } catch (shareErr) {
+          if (shareErr instanceof Error && shareErr.name === 'AbortError') return; // usuario canceló
+          // contexto de gesto agotado u otro error de share → fallback a descarga
+        }
+      }
+      if (!shared) {
+        // Escritorio o share no disponible/fallido: descarga directa
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -82,10 +91,9 @@ const ExportReviewScreen: React.FC<Props> = ({ moments, onBack }) => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        setPhase('ready');
       }
+      setPhase('ready');
     } catch (e) {
-      // El usuario canceló el share o hubo un error
       if (e instanceof Error && e.name !== 'AbortError') {
         setError('No se pudo crear el archivo. Intenta de nuevo.');
       }
