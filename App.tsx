@@ -198,7 +198,7 @@ const App = () => {
                 className={`w-full flex items-center justify-between p-4 rounded-xl text-left transition-colors ${
                   act.isCompleted
                     ? 'bg-green-100 text-green-800 border border-green-200'
-                    : 'bg-calm-bg hover:opacity-80 text-deep-text'
+                    : 'bg-card-bg border border-soft-gray hover:border-calm-blue text-deep-text'
                 }`}
               >
                 <div className="flex flex-col min-w-0 pr-2">

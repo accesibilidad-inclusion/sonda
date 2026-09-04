@@ -24,8 +24,8 @@ export const HELP_CONTENT = {
   subject: "Envío de Sonda - Proyecto FONDECYT 1251541"
 };
 
-// 12 momentos, 13 actividades en total.
-// Momento 1 (Entrada) tiene 2 actividades; el resto, 1.
+// 12 momentos, 14 actividades en total.
+// Momento 1 (Entrada) tiene 3 actividades (1.A, 1.A2, 1.B); el resto, 1.
 // Momento 12 (Cierre) siempre visible y opcional.
 // Todas las preguntas están disponibles desde el inicio; el participante responde en el orden que prefiera.
 export const STUDY_CONTENT: Moment[] = [
@@ -37,9 +37,20 @@ export const STUDY_CONTENT: Moment[] = [
     activities: [
       {
         id: "1.A",
-        title: "Mapa de lugares",
-        description: "La universidad tiene lugares que nos dan seguridad y lugares que nos la quitan. Sube una foto o describe un lugar del campus donde te sientas seguro o segura, y otro donde te sientas abrumado o abrumada.",
-        scaffoldExample: "Ejemplo: una foto de una biblioteca vacía (seguro) y una foto de la cafetería llena (abrumado).",
+        title: "Lugar seguro",
+        description: "Sube una foto o describe un lugar del campus donde te sientas seguro o segura.",
+        scaffoldExample: "Ejemplo: una foto de una biblioteca vacía, o una sala de estudio tranquila.",
+        allowedModes: [ResponseMode.PHOTO, ResponseMode.TEXT, ResponseMode.AUDIO],
+        tacDimension: null,
+        tacSubdimension: null,
+        isCompleted: false,
+        responses: []
+      },
+      {
+        id: "1.A2",
+        title: "Lugar abrumador",
+        description: "Sube una foto o describe un lugar del campus donde te sientas abrumado o abrumada. Si no hay ninguno así, también puedes decirlo.",
+        scaffoldExample: "Ejemplo: una foto de la cafetería llena, o un pasillo con mucho ruido.",
         allowedModes: [ResponseMode.PHOTO, ResponseMode.TEXT, ResponseMode.AUDIO],
         tacDimension: null,
         tacSubdimension: null,

@@ -49,10 +49,21 @@ Este momento inicial no evalúa una subdimensión de la TAC, sino que establece 
 
 ### Actividad A: Mapa de lugares
 
-**Pregunta:**
-> La universidad tiene lugares que nos dan seguridad y lugares que nos la quitan. Sube una foto o describe un lugar del campus donde te sientas seguro o segura, y otro donde te sientas abrumado o abrumada.
+*Esta actividad se divide en dos preguntas separadas para evitar ambigüedad en respuestas con solo foto.*
 
-**Ejemplo:** una foto de una biblioteca vacía (seguro) y una foto de la cafetería llena (abrumado).
+**Pregunta A — Lugar seguro:**
+> Sube una foto o describe un lugar del campus donde te sientas seguro o segura.
+
+**Ejemplo:** una foto de una biblioteca vacía, o una sala de estudio tranquila.
+
+**Modalidades:** foto, texto, audio.
+
+---
+
+**Pregunta A2 — Lugar abrumador:**
+> Sube una foto o describe un lugar del campus donde te sientas abrumado o abrumada. Si no hay ninguno así, también puedes decirlo.
+
+**Ejemplo:** una foto de la cafetería llena, o un pasillo con mucho ruido.
 
 **Modalidades:** foto, texto, audio.
 
