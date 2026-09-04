@@ -41,7 +41,7 @@ const ConsentScreen: React.FC<ConsentScreenProps> = ({ onAccept }) => {
         <section className="bg-card-bg p-6 rounded-2xl shadow-sm border border-soft-gray">
           <h2 className="font-bold text-lg mb-4 text-calm-blue">Detalles del Proyecto</h2>
           <div className="space-y-2">
-            <p><span className="font-bold">Título:</span> Promoción del aprendizaje de habilidades de autodeterminación en estudiantes con TEA en educación superior: Diseño y evaluación de una propuesta formativa basada en la Teoría de la Agencia Causal.</p>
+            <p><span className="font-bold">Título:</span> Promoción del aprendizaje de habilidades de autodeterminación en estudiantes con CEA en educación superior: Diseño y evaluación de una propuesta formativa basada en la Teoría de la Agencia Causal.</p>
             <p><span className="font-bold">Financiamiento:</span> Agencia Nacional de Investigación y Desarrollo (ANID)</p>
             <p><span className="font-bold">Investigadora Responsable:</span> Dra. Vanessa Vega Córdova</p>
             <p><span className="font-bold">Institución:</span> Pontificia Universidad Católica de Valparaíso (PUCV)</p>

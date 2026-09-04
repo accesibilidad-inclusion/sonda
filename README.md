@@ -15,7 +15,7 @@ Su objetivo es recolectar experiencias cualitativas sobre barreras, facilitadore
 ## Contexto del Proyecto
 
 Esta aplicación es parte del proyecto de investigación:
-> **"Promoción del aprendizaje de habilidades de autodeterminación en estudiantes con TEA en educación superior: Diseño y evaluación de una propuesta formativa basada en la Teoría de la Agencia Causal."**
+> **"Promoción del aprendizaje de habilidades de autodeterminación en estudiantes con CEA en educación superior: Diseño y evaluación de una propuesta formativa basada en la Teoría de la Agencia Causal."**
 >
 > **Financiamiento:** FONDECYT Regular N° 1251541 (ANID).
 > **Investigadora Responsable:** Dra. Vanessa Vega Córdova (PUCV).
