@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Zap, RotateCcw, ArrowLeft } from 'lucide-react';
+import { Zap, RotateCcw, ArrowLeft, LayoutDashboard } from 'lucide-react';
 import { storageService } from '../services/storageService';
 
 interface DevPanelProps {
@@ -31,6 +31,30 @@ const DevPanel: React.FC<DevPanelProps> = ({ onBack }) => {
       </div>
 
       <div className="space-y-4 max-w-sm">
+        {/* Saltar al dashboard */}
+        <div className="bg-card-bg rounded-2xl border border-soft-gray p-5">
+          <p className="font-bold text-deep-text flex items-center gap-2 mb-1">
+            <LayoutDashboard size={18} className="text-calm-blue" />
+            Ir al Dashboard
+          </p>
+          <p className="text-sm text-deep-text opacity-60 mb-4">
+            Simula el onboarding completo y salta directo a las preguntas.
+          </p>
+          <button
+            onClick={() => {
+              storageService.saveStartDate(new Date().toISOString());
+              storageService.markWelcomeSeen();
+              storageService.markPermissionsSeen();
+              storageService.markFidgetIntroSeen();
+              storageService.setDevMode(true);
+              onBack();
+            }}
+            className="w-full py-3 bg-calm-blue text-btn-text rounded-xl font-bold hover:opacity-90 transition-opacity"
+          >
+            Saltar al Dashboard
+          </button>
+        </div>
+
         {/* Dev mode toggle */}
         <div className="bg-card-bg rounded-2xl border border-soft-gray p-5">
           <div className="flex items-center justify-between">

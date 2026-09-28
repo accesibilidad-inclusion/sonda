@@ -42,6 +42,9 @@ function getInitialScreen(): AppScreen {
     return isPWA() ? AppScreen.ONBOARDING_CONSENT : AppScreen.ONBOARDING_GREETING;
   }
 
+  // En modo dev, saltar el requisito de PWA y el onboarding restante
+  if (storageService.isDevMode()) return AppScreen.DASHBOARD;
+
   if (!isPWA()) return AppScreen.ONBOARDING_INSTALL;
 
   if (!storageService.hasSeenWelcome()) return AppScreen.ONBOARDING_WELCOME;
@@ -63,13 +66,14 @@ const App = () => {
   const [showFidget, setShowFidget] = useState(false);
   const [showSensorySettings, setShowSensorySettings] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const idbReady = React.useRef(false);
 
   // Migración localStorage → IDB, carga canónica y solicitud de persistencia.
   useEffect(() => {
     migrateFromLocalStorage()
       .then(() => storageService.loadProgress())
       .then(data => applySequentialUnlock(data, storageService.isDevMode()))
-      .then(setMoments)
+      .then(data => { idbReady.current = true; setMoments(data); })
       .then(requestPersistence)
       .then(isStorageCritical)
       .then(critical => {
@@ -78,8 +82,9 @@ const App = () => {
       .catch(console.error);
   }, []);
 
-  // Persistencia — lanza si IDB falla y muestra aviso accionable.
+  // Persistencia — no corre hasta que la carga canónica de IDB haya terminado.
   useEffect(() => {
+    if (!idbReady.current) return;
     storageService.saveProgress(moments)
       .then(() => setSaveError(null))
       .catch(() => setSaveError('No se pudo guardar tu última respuesta. Exporta tus datos ahora.'));
