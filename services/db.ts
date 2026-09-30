@@ -10,7 +10,13 @@ function openDB(): Promise<IDBDatabase> {
       const db = (e.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains('data')) db.createObjectStore('data');
     };
-    req.onsuccess = e => { _db = (e.target as IDBOpenDBRequest).result; resolve(_db!); };
+    req.onsuccess = e => {
+      const db = (e.target as IDBOpenDBRequest).result;
+      // Android puede cerrar la conexión en segundo plano: descartar el caché para reabrir.
+      db.onclose = db.onversionchange = () => { db.close(); if (_db === db) _db = null; };
+      _db = db;
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -30,7 +36,7 @@ export async function idbSet(key: string, value: unknown): Promise<void> {
     const tx = db.transaction('data', 'readwrite');
     tx.objectStore('data').put(value, key);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = tx.onabort = () => reject(tx.error);
   });
 }
 

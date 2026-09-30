@@ -18,6 +18,20 @@ const LS = {
   DEV_MODE: 'sonda_dev_mode',
 };
 
+/** Aplica las respuestas guardadas (por id de actividad) sobre el contenido vigente,
+ *  de modo que cambios en las preguntas no dependan de la copia guardada. */
+function mergeStored(stored: Moment[]): Moment[] {
+  const byId = new Map(stored.flatMap(m => m.activities).map(a => [a.id, a]));
+  return defaultMoments().map(m => ({
+    ...m,
+    activities: m.activities.map(a => {
+      const old = byId.get(a.id);
+      const responses = old?.responses ?? [];
+      return { ...a, responses, isCompleted: responses.length > 0 };
+    }),
+  }));
+}
+
 function defaultMoments(): Moment[] {
   return STUDY_CONTENT.map(m => ({
     ...m,
@@ -34,7 +48,7 @@ export const storageService = {
   loadProgressSync(): Moment[] {
     try {
       const raw = localStorage.getItem(IDB.PROGRESS);
-      if (raw) return JSON.parse(raw);
+      if (raw) return mergeStored(JSON.parse(raw));
     } catch { /* corrupción: ignorar */ }
     return defaultMoments();
   },
@@ -43,11 +57,11 @@ export const storageService = {
   async loadProgress(): Promise<Moment[]> {
     try {
       const data = await idbGet<Moment[]>(IDB.PROGRESS);
-      if (data) return data;
+      if (data) return mergeStored(data);
     } catch { /* continuar al fallback */ }
     try {
       const raw = localStorage.getItem(IDB.PROGRESS);
-      if (raw) return JSON.parse(raw);
+      if (raw) return mergeStored(JSON.parse(raw));
     } catch { /* ignorar */ }
     return defaultMoments();
   },

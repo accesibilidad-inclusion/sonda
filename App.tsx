@@ -70,16 +70,20 @@ const App = () => {
 
   // Migración localStorage → IDB, carga canónica y solicitud de persistencia.
   useEffect(() => {
+    // Pedir persistencia primero: en Android el navegador puede desalojar el almacenamiento.
+    requestPersistence().catch(console.error);
     migrateFromLocalStorage()
+      .catch(console.error) // una migración fallida no debe impedir la carga
       .then(() => storageService.loadProgress())
-      .then(data => applySequentialUnlock(data, storageService.isDevMode()))
       .then(data => { idbReady.current = true; setMoments(data); })
-      .then(requestPersistence)
       .then(isStorageCritical)
       .then(critical => {
         if (critical) setSaveError('Tu almacenamiento está casi lleno. Exporta tus datos para evitar pérdidas.');
       })
-      .catch(console.error);
+      .catch(err => {
+        console.error(err);
+        setSaveError('No se pudieron cargar tus respuestas guardadas. No cierres la app y exporta tus datos.');
+      });
   }, []);
 
   // Persistencia — no corre hasta que la carga canónica de IDB haya terminado.
