@@ -195,8 +195,21 @@ export const storageService = {
     return new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   },
 
+  /**
+   * Genera el nombre del archivo de exportación.
+   * Formato: `sonda_datos_<fecha>_<sufijo>.json`, con un sufijo aleatorio de
+   * 6 caracteres que evita colisiones cuando varias exportaciones ocurren el
+   * mismo día o terminan en la misma carpeta del equipo investigador.
+   * Se usa en components/ExportReviewScreen.tsx (donde `.json` se reemplaza
+   * por `.sonda`) y en el fallback exportData() de descarga directa (abajo).
+   */
   exportFilename(): string {
-    return `sonda_datos_${new Date().toISOString().split('T')[0]}.json`;
+    const fecha = new Date().toISOString().split('T')[0];
+    const alfabeto = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const sufijo = Array.from(crypto.getRandomValues(new Uint8Array(6)))
+      .map(b => alfabeto[b % alfabeto.length])
+      .join('');
+    return `sonda_datos_${fecha}_${sufijo}.json`;
   },
 
   /** Descarga directa (fallback de emergencia, sin pantalla de revisión). */
